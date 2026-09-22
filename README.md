@@ -40,7 +40,26 @@ GET ws://127.0.0.1:50052/ws/input?generation=<uint64>
 - `generation` 以十进制**字符串**传输（JSON 数字放不下 uint64）。`state` ∈ `LOST/NOT_READY/READY`；`action` ∈ `SQUAT/LEFT_LEG/RIGHT_LEG/JUMP_LEFT/JUMP_RIGHT/JUMPING_JACK`；`phase` ∈ `BEGIN/COMPLETE/CANCEL`。
 - 出错（编号被替换、队列溢出、识别端断线）时服务端先发一条 `{"error": ..., "code": ...}` 再关闭连接，UE 据此暂停并以新 generation 重连。
 
-存档仍走 gRPC（`SaveRun` / `GetProgress`）；完整约定见 [Go 与 Protobuf 接入说明](docs/Go与Protobuf接入说明.md)。
+## UE 接入：存档 HTTP 接口
+
+存档走同一 `50052` 端口上的 HTTP+JSON（UE 无 gRPC 插件）：
+
+```sh
+POST http://127.0.0.1:50052/api/save
+{"run_id":"<uuid>","level_id":2,"score":12,"active_ms":31200,"action_counts":{"2":3,"6":1}}
+→ 200 {"run":{...原样返回已保存记录...}}
+
+GET  http://127.0.0.1:50052/api/progress
+→ 200 {"levels":[{"level_id":1,"completed":true,"best_score":57,"unlocked":true}, ...]}
+```
+
+- 字段与 `star.v1.Run` / `LevelProgress` 一一对应；`action_counts` 键是数值 Action（1–6），值是**完整周期次数**（不含 Begin/Cancel）。
+- 与 gRPC 的 `SaveRun` / `GetProgress` **共用同一个 `storage.Store` 和同一套错误分类**，两条通路不会各自漂移。
+- **幂等**：相同 `run_id` 重试返回**首次保存**的记录，即使本次 payload 不同，也不会改写存档或另一关进度 —— 这是客户端待提交队列的安全前提。
+- 校验：`level_id` 必须 1–3、分数与时长非负、`run_id` 非空且 ≤128 字节；**未知字段会被拒绝**（避免拼写错误静默写入错误成绩）。非法输入 400，动词不对 405。
+- `unlocked` 是派生值：第 1 关恒解锁，第 N 关取决于第 N−1 关 `completed`。
+
+gRPC 通路（`127.0.0.1:50051`）继续保留，供 Python 识别端与任何 gRPC 客户端使用。
 
 重新生成协议需要 protoc（已验证 3.21.12）及固定版本 Go 插件：
 
@@ -56,8 +75,8 @@ make generate
 - `proto/star/v1`：协议定义；`gen/star/v1`：生成的 Go 代码。
 - `internal/input`：单识别端、单 UE 的有序消息队列、generation 隔离和周期检查。
 - `internal/storage`：两张 SQLite 表及事务化幂等结算。
-- `internal/service`：gRPC 接口；`cmd/star-service`：进程入口。
-- `client/savequeue`：Go 客户端可复用的本地 JSON 待提交队列。
+- `internal/service`：gRPC 接口、`ws_gateway.go`（WebSocket 推输入）、`http_api.go`（HTTP 存档）；`cmd/star-service`：进程入口。
+- `client/savequeue`：Go 客户端可复用的本地 JSON 待提交队列（UE 侧对应 `StarSaveQueueComponent`，语义一致）。
 - `cmd/star-smoke`：无相机联调工具。
 
 完整接口约定与 UE/识别运行时接线顺序见 [Go 与 Protobuf 接入说明](docs/Go与Protobuf接入说明.md)。

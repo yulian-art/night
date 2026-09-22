@@ -44,7 +44,7 @@ SQLite 开启 WAL、FULL 同步及 5 秒 busy timeout。`runs` 和 `progress` �
 
 UE 结算时生成一次唯一 run_id（建议 UUID），先追加到本地 JSON 待提交列表，再调用 SaveRun。只有返回的 Run.run_id 与待提交项匹配后才移除该项。若服务已提交但响应丢失，重试会返回原 Run，即使本次请求内容变化也不会改写存档或另一关进度。GetProgress 反映当前总进度；SaveRun 不返回会随后续局变化的进度快照。
 
-`client/savequeue` 提供相同策略的 Go 实现，可供 Go 调试客户端使用，UE 需要在客户端落地等价队列：
+`client/savequeue` 提供相同策略的 Go 实现，可供 Go 调试客户端使用；UE 端的等价队列是 `unreal/StarJourney/Source/StarJourney/StarSaveQueueComponent`，规则逐条对齐（先入队再发送、凭返回 run_id 匹配才移除、损坏文件报错不覆盖、临时文件+原子重命名、失败停止本轮并保留余项）。Go 侧用法：
 
 ```go
 queue, err := savequeue.Open("data/pending-runs.json")
@@ -61,8 +61,24 @@ return queue.Flush(ctx, func(ctx context.Context, req *starv1.SaveRunRequest) (*
 
 SaveRun 只用于正式通关，AutoDemo 不调用、不进入待提交列表。当前没有媒体表、局中断点续玩、设置系统或 UE 奖励演出状态；这些按原文后续阶段再加入。
 
+## 传输：gRPC / WebSocket / HTTP
+
+同一个进程在**两个 loopback 端口**上同时提供三种接入方式，全部共用同一个 `InputHub` 与同一个 `storage.Store`：
+
+| 端口 | 协议 | 端点 / 用途 |
+|---|---|---|
+| 50051 | gRPC | `RecognizerService.Connect`（识别端）、`WatchInput` / `SaveRun` / `GetProgress` |
+| 50052 | WebSocket + JSON | `GET /ws/input?generation=N`：把 `InputEvent` 流推给 UE（UE 无 gRPC 插件） |
+| 50052 | HTTP + JSON | `POST /api/save`、`GET /api/progress`：存档读写 |
+
+HTTP 存档接口与 gRPC 版本**共用业务实现（`storage.Store`）和同一套错误分类**，所以校验规则、幂等语义与错误映射不会在两条通路之间分叉。JSON 字段与 proto 消息同名：`run_id` / `level_id` / `score` / `active_ms` / `action_counts`（键为数值 Action 1–6）；`action_counts` 与 `levels` 的结构与消息定义一致。未知字段会被拒绝，以免拼写错误静默写入错误成绩。
+
+UE 的实际用法是：**输入走 WebSocket、存档走 HTTP**，两条通路都不需要引入 gRPC。WebSocket 上的 `generation` 以十进制字符串传输（JSON 数字承载不了 `uint64`）。
+
+三个端点都只监听回环地址，且**没有鉴权**：任何本机进程都能读写存档。单机游戏可接受，但它不是多用户隔离方案，也不应把该端口暴露到回环之外（启动时已强制校验监听地址必须是回环 IP）。
+
 ## 验证与参考
 
-`go test -race ./...` 覆盖有序动作周期、旧 generation 隔离、丢人取消、溢出、识别端断线、SQLite 回滚/并发幂等/重启、待提交列表故障恢复，以及通过真实 gRPC 编解码的进程内集成测试。`star-smoke` 可验证实际 TCP 服务。
+`go test -race ./...` 覆盖有序动作周期、旧 generation 隔离、丢人取消、溢出、识别端断线、SQLite 回滚/并发幂等/重启、待提交列表故障恢复，以及通过真实 gRPC 编解码的进程内集成测试。HTTP 存档端点由 `internal/service/http_api_test.go` 覆盖：保存、**改 payload 重试仍返回原记录且不污染他关进度**、非法输入 400、错误动词 405、解锁派生。`star-smoke` 可验证实际 TCP 服务。
 
 协议生成和流用法参考 [gRPC Go 官方教程](https://grpc.io/docs/languages/go/basics/) 与 [Protobuf Go 代码生成说明](https://protobuf.dev/reference/go/go-generated/)，进度更新使用 [SQLite UPSERT](https://www.sqlite.org/lang_upsert.html)。
