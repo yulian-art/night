@@ -46,6 +46,29 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Star|Director")
 	bool IsLevelComplete() const { return bLevelComplete; }
 
+	// True once InitializeRun has run, whether by hand/Blueprint wiring or by
+	// the director's own auto-init. Read it to know the run is actually live.
+	UFUNCTION(BlueprintPure, Category = "Star|Director")
+	bool IsInitialized() const { return bInitialized; }
+
+	// True while the runner is pinned at a task stop waiting for its action
+	// cycle. Pause logic needs this: a pause must not be mistaken for the
+	// stop wait (or vice versa), and only this state may hold the runner.
+	UFUNCTION(BlueprintPure, Category = "Star|Director")
+	bool IsWaitingAtStation() const { return bWaitingAtStation; }
+
+	// The action the player must perform right now, or EStarAction::None when
+	// no stop is holding the runner. The HUD prompts with this, so the prompt
+	// always matches the station that is actually holding the runner rather
+	// than whatever action the player happens to be attempting.
+	UFUNCTION(BlueprintPure, Category = "Star|Director")
+	EStarAction GetRequiredActionNow() const;
+
+	// Index of the station holding the runner (or the next one it is heading
+	// to), so the HUD can show progress without knowing the route itself.
+	UFUNCTION(BlueprintPure, Category = "Star|Director")
+	int32 GetNextStationIndex() const;
+
 	// Starlight: collected glow units (documented floor(t * 1.7) is an
 	// AutoDemo rule; here we count completed stations + jack bonuses).
 	UFUNCTION(BlueprintPure, Category = "Star|Director")
@@ -79,6 +102,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Director")
 	float StopApproachDistance = 240.0f;
 
+	// Self-wiring opt-out. On by default because the playable map is produced
+	// by a Python generator: there is no level Blueprint to call InitializeRun,
+	// so the director finds the player pawn and the stations itself. Turn it
+	// off only where a Blueprint drives InitializeRun with a custom roster.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Director")
+	bool bAutoInitialize = true;
+
 	// Durable outbox for settled runs. Owned here because settling is the only
 	// place a real run is produced (AutoDemo must never enqueue).
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star|Components")
@@ -87,6 +117,15 @@ protected:
 private:
 	void UpdateStops();
 	void Settle();
+
+	// Look for the player's runner pawn and the stations in the world, and
+	// wire the run once both exist. Called from Tick while uninitialized
+	// because BeginPlay is too early (the GameMode spawns the pawn after
+	// actors have begun play).
+	void TryAutoInitialize();
+
+	// Set once InitializeRun has run; guards auto-init from double-running.
+	bool bInitialized = false;
 
 	// Build the completed-run record and hand it to the outbox, then try to
 	// send. Runs exactly once per settled level.

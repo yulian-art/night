@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Inspect', 'Build', 'Capture', 'Validate', 'Open', 'Play')]
+    [ValidateSet('Inspect', 'Build', 'PlayLevel', 'Capture', 'Validate', 'Open', 'Play')]
     [string]$Action = 'Build',
     [string]$ProjectRoot = 'D:\UE\Projects\StarJourney',
     [string]$EngineRoot = 'D:\UE\UE_5.8',
@@ -48,7 +48,7 @@ if ($Action -in @('Capture', 'Validate')) {
     $Script = Join-Path $ProjectRoot "Content\Python\$ScriptName"
     $Process = Start-Process $Editor -Wait -PassThru -ArgumentList @('"' + $ProjectFile + '"', '-unattended', '-NoSplash', '-NoSound', '-RenderOffscreen', '-windowed', '-ResX=1600', '-ResY=900', '"-ExecutePythonScript=' + $Script + '"', '"-abslog=' + $Logs + '\' + $Action + '.log"')
 } else {
-    $ScriptName = if ($Action -eq 'Inspect') { 'inspect_assets.py' } else { 'build_scene.py' }
+    $ScriptName = if ($Action -eq 'Inspect') { 'inspect_assets.py' } elseif ($Action -eq 'PlayLevel') { 'build_play_level.py' } else { 'build_scene.py' }
     $Script = Join-Path $ProjectRoot "Content\Python\$ScriptName"
     if ($Action -eq 'Build' -and (Test-Path (Join-Path $ProjectRoot 'Content\StarJourney'))) {
         $Backup = Join-Path $ProjectRoot ('Saved\SceneBackups\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -69,5 +69,18 @@ if ($Action -in @('Capture', 'Validate')) {
     if (Select-String -Path (Join-Path $Logs "$Action.log") -Pattern 'Failed to compile Material|LogPython: Error:' -Quiet) {
         throw "UE $Action contains material/Python errors. See $Logs."
     }
+}
+if ($Action -eq 'PlayLevel') {
+    $ReportPath = Join-Path $ProjectRoot 'Saved\SceneReports\play_level_report.json'
+    if (!(Test-Path $ReportPath) -or (Get-Item $ReportPath).LastWriteTime -lt $RunStarted) {
+        throw "UE PlayLevel did not write a fresh report: $ReportPath"
+    }
+    $Report = Get-Content $ReportPath -Raw | ConvertFrom-Json
+    # A silently unset GameMode override is the failure that matters here: the
+    # playable map would spawn no runner, and worse, the movie map would inherit
+    # the gameplay mode and spawn one over the demo. Both are hard failures.
+    if (!$Report.play_gamemode_set) { throw "UE PlayLevel could not set the playable map's game mode. See $ReportPath" }
+    if (!$Report.cinematic_gamemode_set) { throw "UE PlayLevel could not pin the cinematic map to GameModeBase; the demo would inherit the gameplay mode. See $ReportPath" }
+    if ($Report.warnings -and @($Report.warnings).Count -gt 0) { Write-Warning (@($Report.warnings) -join '; ') }
 }
 Write-Output "UE $Action completed: $ProjectFile"

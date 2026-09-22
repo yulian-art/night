@@ -40,7 +40,42 @@
 
 ### 5. 任务点夹紧停车
 
-`StarLevelDirector::UpdateStops` 在 `StopX` 处**硬夹紧**——掉帧也不能跳过任务点。玩家做出配置的动作（默认开合跳）→ 点亮 → 继续前进；全部任务完成且越过 `FinishX` → 结算星种并统计各动作完成次数（供 `SaveRun`）。
+`StarLevelDirector::UpdateStops` 在 `StopX` 处**硬夹紧**——掉帧也不能跳过任务点。玩家做出配置的动作（默认开合跳）→ 点亮 → 继续前进；全部任务完成且越过 `FinishX` → 结算星种、统计各动作完成次数并写入存档。
+
+### 6. 固定后视相机由 Pawn 自己持有
+
+`AStarRunnerPawn` 带一个 `UCameraComponent`，每帧显式设定**世界**位置与旋转（`CameraBackOffset=1350`、`CameraHeight=440`、`CameraPitch=-6`、`CameraFov=55`，对齐原播片机位）。关键在于相机的世界 Y 锁在 `CenterLineY`（出生时的中心线）而**不是**角色当前 Y —— 所以换道时镜头不随角色左右摆动，符合设计文档「横向主要跟道路中心，角色换道时镜头不跟着急摆」。相机挂在自己身上，视角必然绑到玩家，不再依赖关卡里的 CameraActor。
+
+### 7. 存档链路（UE → Go → SQLite）
+
+`AStarLevelDirector` 自带一个 `UStarSaveQueueComponent`（待提交队列）；`Settle()` 时组装 `FStarRun` → **先持久化入队** → 再 `Flush()`：
+
+- `run_id` 是本局一次性 UUID，重试复用同一个，因此「服务已提交但回包丢失」的重试会命中幂等、返回原记录。
+- `active_ms` 取本局游戏时钟；`action_counts` 是各动作**完整周期**次数。
+- 队列语义与 Go 的 `client/savequeue` 逐条一致：凭返回 run_id 匹配才移除、损坏文件不覆盖、临时文件+原子替换、失败停止本轮并保留余项。
+- 存档走 HTTP：`POST http://127.0.0.1:50052/api/save`；启动时用 `GET /api/progress` 读取解锁状态（`Progress` / `OnProgressLoaded`）。
+- **AutoDemo 不入队**（设计文档：演示不写真实进度）。
+
+### 8. HUD（纯 C++ Slate，无 UMG 资产）
+
+`AStarHUD` 在 `BeginPlay` 把 `SStarHudWidget` 加入视口，每帧从 Pawn / Director 取数刷新：星光数、任务进度 `0/3`、当前动作（**色块 + 中文名**，满足「不只靠颜色提示」）、追踪状态、任务点所需动作提示、暂停提示。
+
+暂停用真正的引擎暂停。这条闭环依赖四处配合，**缺一即失效**：
+
+1. `AStarPlayerController` 构造里 `bShouldPerformFullTickWhenPaused = true`（缺它则暂停时控制器根本不走完整 tick）；
+2. `SetupInputComponent` 里 `InputComponent->bExecuteWhenPaused = true`，**之后**再绑 Esc；
+3. `AStarHUD` 构造里 `PrimaryActorTick.bTickEvenWhenPaused = true`（否则暂停后界面不刷新，看不到「已暂停」）。
+
+### 9. 玩法地图（免蓝图）
+
+`Content/Python/build_play_level.py` 生成 `L_EchoForest_Play`：复制播片地图的场景资源，**删掉** Sequencer 导演、播片相机与 `05_Travellers` 占位角色，放 `PlayerStart` + 1 个 Director + 3 个 Station（三盏路灯各需一次完整开合跳），并把玩法地图的 GameMode 覆盖为 `AStarGameMode`、**同时把播片地图钉回 `GameModeBase`**（否则播片地图会继承全局玩法模式，在演示里生成一个 Pawn）。
+
+Director 通过 `bAutoInitialize` 自己发现 Pawn 与 Station 并接线，**因此地图不需要任何蓝图胶水**。
+
+```powershell
+.\Manage-StarJourney.ps1 -Action PlayLevel   # 生成/重建玩法地图
+.\Manage-StarJourney.ps1 -Action Play        # 播放
+```
 
 ## 在 Windows 上编译
 
@@ -64,13 +99,14 @@
 | S（按住） | 蹲下 | 穿过低树枝/花藤/云拱门；**松开才算站起** |
 | Q / E（按住） | 抬左腿 / 抬右腿 | 跨过对应脚侧障碍、触发脚印机关 |
 | 空格 | 开合跳 | 越过缺口、点亮机关、唤醒星种 |
+| Esc | 暂停 / 继续 | 引擎暂停；暂停时 HUD 仍刷新并显示提示 |
 
 ## 接体感（下一步）
 
 `UStarInputComponent::ConnectGestures("ws://127.0.0.1:50052/ws/input")` 即可接入 Go 网关的动作流；组件会自动带上递增的 `generation`。键盘与体感共用同一套 `HandleAction`/`HandleTracking`，玩法代码不变。
 
-## 待落地（需蓝图/编辑器，不在 C++ 范围）
+## 待落地（后续批次）
 
-- 玩法地图 `L_EchoForest_Play`：把 `L_EchoForest` 的场景资源复制一份，World Settings 的 GameMode 设为 `AStarGameMode`，放一个 `AStarLevelDirector` 并在关卡蓝图里 `InitializeRun(Runner, Stations)`。
-- 宇航员/狐狸骨骼网格与 AnimBP：当前 Pawn 用胶囊体 + 视觉占位，正式角色动画需美术资产。
-- 固定后视相机绑定玩家视角、HUD（星光、任务进度、动作图标）。
+- **角色骨骼与 AnimBP**：当前角色表现是胶囊体 + 视觉占位（`Content/Models` 里的宇航员/狐狸是静态低模）。六个动作与狐狸待机的骨骼动画需在 Blender 绑骨 + 权重 + 动画，随后 Pawn 换成 `USkeletalMeshComponent` 并由 AnimBP 状态机驱动。
+- **第二、三关内容与场景件美术**：云鲸、邮站/风车/信封/花台、云桥、巨行星、群山剪影；关卡数据改为文本配置驱动。
+- **文档后置项**：选关与解锁页、纪念页媒体表、局中断点续玩、设置系统、UE 奖励演出状态。

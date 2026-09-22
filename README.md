@@ -83,4 +83,6 @@ make generate
 
 人体识别入口见 [recognizer 使用说明](recognizer/README.md)：Windows FFmpeg 采集 Insta360 X5 USB 画面，通过本机管道送入 WSL Python，由 MediaPipe 和动作状态机向 Go 发送识别结果。支持原生预览，无需 Windows Python、Android 或 HTML。
 
-UE 场景入口见 [回声森林场景说明](unreal/README.md)：包含 UE 5.8 工程配置、素材导入与场景生成脚本、原生地图和 30 秒自动演示。Windows 工作工程位于 `D:\UE\Projects\StarJourney`。当前为场景与演出样片，尚未接入姿态识别和正式任务逻辑。
+UE 场景入口见 [回声森林场景说明](unreal/README.md)：包含 UE 5.8 工程配置、素材导入与场景生成脚本、原生地图和 30 秒自动演示。Windows 工作工程位于 `D:\UE\Projects\StarJourney`。
+
+UE 侧现在分成两层：`L_EchoForest` 是**播片样片**（Sequencer 驱动，原样保留）；`L_EchoForest_Play` 是**可玩关卡**，由 C++ 玩法模块（`unreal/StarJourney/Source`）实时驱动——三道跑酷 Pawn、键盘/WebSocket 双输入源、任务点机关、Slate HUD、Esc 暂停，以及结算写入存档的完整链路。构建、操作与后续批次见 [UE 玩法模块说明](unreal/StarJourney/Source/README.md)。角色骨骼动画与第二、三关内容仍待后续批次。

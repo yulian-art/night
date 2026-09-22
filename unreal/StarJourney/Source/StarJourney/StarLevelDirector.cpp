@@ -5,6 +5,8 @@
 #include "StarSaveQueueComponent.h"
 #include "StarStation.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "GameFramework/PlayerController.h"
 
 AStarLevelDirector::AStarLevelDirector()
 {
@@ -37,6 +39,10 @@ void AStarLevelDirector::InitializeRun(AStarRunnerPawn* InRunner, const TArray<A
 		Runner->OnActionCompleted.AddDynamic(this, &AStarLevelDirector::NotifyActionCompleted);
 		Runner->SetRunning(true);
 	}
+	// Last, once the run is fully wired, whether by hand/Blueprint or by
+	// auto-init. This is what stops Tick from discovering a second roster and
+	// re-running over a live run.
+	bInitialized = true;
 }
 
 int32 AStarLevelDirector::GetActionCount(EStarAction Action) const
@@ -45,14 +51,83 @@ int32 AStarLevelDirector::GetActionCount(EStarAction Action) const
 	return Found ? *Found : 0;
 }
 
+EStarAction AStarLevelDirector::GetRequiredActionNow() const
+{
+	// Defined in the .cpp rather than inline in the header because AStarStation
+	// is only forward-declared there, and the prompt needs the complete type.
+	if (!bWaitingAtStation || !Stations.IsValidIndex(NextStation))
+	{
+		// Outside a stop the player may perform any action the lane allows, so
+		// there is nothing specific to prompt.
+		return EStarAction::None;
+	}
+	AStarStation* Station = Stations[NextStation];
+	return Station ? Station->GetRequiredAction() : EStarAction::None;
+}
+
+int32 AStarLevelDirector::GetNextStationIndex() const
+{
+	return NextStation;
+}
+
 void AStarLevelDirector::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// Playable levels are produced by a generator that only places actors and
+	// sets properties - no Blueprint wires InitializeRun - so the director
+	// finds its own runner and stations. This cannot happen in BeginPlay: the
+	// GameMode spawns and possesses the pawn on its own schedule, so on the
+	// first Tick the director may legitimately see no pawn yet. Hence the retry.
+	if (bAutoInitialize && !bInitialized)
+	{
+		TryAutoInitialize();
+		// Still unwired (no player pawn or no stations yet): there is nothing
+		// to drive, so leave before touching UpdateStops.
+		if (!bInitialized)
+		{
+			return;
+		}
+	}
+
 	if (!Runner || bLevelComplete)
 	{
 		return;
 	}
 	UpdateStops();
+}
+
+// Two cheap lookups per attempt, repeated until both halves exist; the retry
+// is what makes a late-spawned player pawn a non-issue instead of a race the
+// level has to win on frame one.
+void AStarLevelDirector::TryAutoInitialize()
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+
+	APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	AStarRunnerPawn* Pawn = PC ? Cast<AStarRunnerPawn>(PC->GetPawn()) : nullptr;
+
+	// TActorIterator walks the level's actor list directly, so no temporary
+	// AActor* array and no cast pass is needed for the stations.
+	TArray<AStarStation*> FoundStations;
+	for (TActorIterator<AStarStation> It(GetWorld()); It; ++It)
+	{
+		FoundStations.Add(*It);
+	}
+
+	if (Pawn && FoundStations.Num() > 0)
+	{
+		// InitializeRun stays the single entry point: it sorts by StopX and
+		// resets every counter, so the roster must never be assembled twice by
+		// hand here.
+		InitializeRun(Pawn, FoundStations);
+	}
+	// Fewer than one station means the level content is not up yet. Waiting
+	// beats wiring an empty run, which would find no stop and settle instantly
+	// at FinishX the moment the runner crossed it.
 }
 
 // Clamp the stop to the task point: a dropped frame must not skip it. The

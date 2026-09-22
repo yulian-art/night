@@ -6,6 +6,7 @@
 #include "StarTypes.h"
 #include "StarRunnerPawn.generated.h"
 
+class UCameraComponent;
 class UCapsuleComponent;
 class USceneComponent;
 class UStarInputComponent;
@@ -74,6 +75,11 @@ public:
 	UPROPERTY(BlueprintAssignable, Category = "Star|Runner")
 	FStarOnActionCompleted OnActionCompleted;
 
+	// The framing camera, for systems that need to place prompts/effects in
+	// view space instead of re-deriving the framing themselves.
+	UFUNCTION(BlueprintPure, Category = "Star|Runner")
+	UCameraComponent* GetRunnerCamera() const { return Camera; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -107,6 +113,31 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Movement")
 	float SquatBlendTime = 0.15f;
 
+	// ---- Fixed rear-view camera tuning --------------------------------------
+	// The doc pins the camera to forward motion and to the road's center line,
+	// so none of these follow the runner's lane: lateral framing stays still
+	// while the body swaps lanes, keeping the action prompts readable.
+
+	// How far behind the runner (along world -X) the camera sits, in cm.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Camera")
+	float CameraBackOffset = 1350.0f;
+
+	// Fixed world Z for the camera, in cm. Independent of the jump/squat
+	// offsets on the visual body, which must never bounce the frame.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Camera")
+	float CameraHeight = 440.0f;
+
+	// Fixed pitch in degrees, applied as world rotation; yaw stays 0 so the
+	// road always vanishes at the same point on screen.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Camera")
+	float CameraPitch = -6.0f;
+
+	// Fixed horizontal FOV in degrees (the cinematic authored 55 for this
+	// framing). Applied to the component at construction and re-applied in
+	// BeginPlay, so a per-instance override here actually takes effect.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Camera")
+	float CameraFov = 55.0f;
+
 	// ---- Components ----------------------------------------------------------
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star|Components")
@@ -120,6 +151,11 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star|Components")
 	TObjectPtr<UStarInputComponent> Input;
 
+	// Fixed rear-view framing camera (doc: 55 degree FOV, the small traveller
+	// low in frame with the road running to the vanishing point).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star|Components")
+	TObjectPtr<UCameraComponent> Camera;
+
 private:
 	// Per-frame movement integration.
 	void UpdateForward(float Dt);
@@ -127,6 +163,9 @@ private:
 	void UpdateJump(float Dt);
 	void UpdateSquat(float Dt);
 	void ApplyVisualOffset();
+
+	// Re-pin the camera to world space after movement has been integrated.
+	void UpdateCamera();
 
 	bool CanStartAction(EStarAction Action) const;
 	void BeginAction(EStarAction Action);

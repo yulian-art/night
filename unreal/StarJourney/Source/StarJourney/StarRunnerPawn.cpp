@@ -1,6 +1,7 @@
 // Copyright 向星而行. Three-lane runner driven by action events.
 #include "StarRunnerPawn.h"
 
+#include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
 #include "StarInputComponent.h"
@@ -18,6 +19,28 @@ AStarRunnerPawn::AStarRunnerPawn()
 	VisualRoot->SetupAttachment(Capsule);
 
 	Input = CreateDefaultSubobject<UStarInputComponent>(TEXT("Input"));
+
+	// Attached to the capsule (so it is part of the pawn's component tree and
+	// gets torn down with it), but its world transform is overwritten every
+	// Tick instead of following the attachment.
+	Camera = CreateDefaultSubobject<UCameraComponent>(TEXT("Camera"));
+	Camera->SetupAttachment(Capsule);
+	// The view is authored, never user-steered: without this the camera would
+	// inherit the controller's rotation, and the horizon -- together with the
+	// action prompts pinned to it -- would swim on any look input.
+	Camera->bUsePawnControlRotation = false;
+	// Seed the component from the tuning value so the editor preview already
+	// shows the authored framing. BeginPlay re-applies it, because this
+	// constructor runs on the CDO and therefore cannot see per-instance edits.
+	Camera->SetFieldOfView(CameraFov);
+
+	// Opt this pawn in to feeding its own camera component to the player
+	// camera manager. APawn only looks for a camera component on the pawn when
+	// this is set, so without it the PlayerController would frame the run from
+	// the actor origin and the fixed rear view would never appear. Setting it
+	// here is what takes over the player view with no level Blueprint and no
+	// CameraActor wiring.
+	bFindCameraComponentWhenViewTarget = true;
 }
 
 void AStarRunnerPawn::BeginPlay()
@@ -26,6 +49,11 @@ void AStarRunnerPawn::BeginPlay()
 	// Spawn Y is the center lane; lanes are spaced around it.
 	CenterLineY = GetActorLocation().Y;
 	LaneStartY = LaneTargetY = CenterLineY;
+	// Re-apply the authored FOV now that instance overrides are live, then pin
+	// the camera once before the first Tick: frame 0 then already shows the
+	// authored rear view instead of looking out from the capsule origin.
+	Camera->SetFieldOfView(CameraFov);
+	UpdateCamera();
 }
 
 void AStarRunnerPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -45,6 +73,38 @@ void AStarRunnerPawn::Tick(float DeltaSeconds)
 	UpdateJump(DeltaSeconds);
 	UpdateSquat(DeltaSeconds);
 	ApplyVisualOffset();
+	// Camera last: it must reflect the position the runner actually ended the
+	// frame at, otherwise the frame lags the lane change by one Tick.
+	UpdateCamera();
+}
+
+// The camera is written in world space on purpose, and Y comes from the route
+// center line rather than from the runner: the design requires the camera to
+// ride forward motion but NOT to swing when the runner swaps lanes, because
+// decorative sway/rotation must not hurt readability of the action prompts.
+// Pinning X to the runner (not to a fixed X) is what follows forward motion
+// and keeps the runner's on-screen size constant while the road scrolls past;
+// pinning Y to CenterLineY means a lane change reads as the runner moving
+// across a steady frame instead of the world swaying, and the prompts stay
+// where the player last saw them. Zero yaw, fixed pitch: the vanishing point
+// never drifts.
+//
+// Why not the level's static CameraActor: it is a fixed world position, so the
+// moment the runner advances it would be left behind and the playable view
+// would sit back at the start line. Only the pawn knows the current X, so the
+// follow has to be computed here, on the thing that is actually moving.
+void AStarRunnerPawn::UpdateCamera()
+{
+	if (!Camera)
+	{
+		return;
+	}
+	const FVector RunnerLoc = GetActorLocation();
+	// CenterLineY is captured at spawn, so this stays valid even though the
+	// lane change moves the pawn's own Y.
+	const FVector CameraLoc(RunnerLoc.X - CameraBackOffset, CenterLineY, CameraHeight);
+	Camera->SetWorldLocation(CameraLoc);
+	Camera->SetWorldRotation(FRotator(CameraPitch, 0.0f, 0.0f));
 }
 
 // ---------------------------------------------------------------------------
