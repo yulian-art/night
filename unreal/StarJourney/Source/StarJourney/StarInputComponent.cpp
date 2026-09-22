@@ -132,7 +132,9 @@ void UStarInputComponent::ConnectGestures(const FString& WebSocketUrl)
 		return;
 	}
 	Generation = NextGeneration();
-	const FString Url = FString::Printf(TEXT("%s?generation=%llu"), *WebSocketUrl, Generation);
+	// %lld, not %llu: Generation is int64 now (UHT rejects uint64 in reflected
+	// members), and a signed/unsigned mismatch here is a -Wformat error.
+	const FString Url = FString::Printf(TEXT("%s?generation=%lld"), *WebSocketUrl, Generation);
 	GestureUrl = Url;
 
 	Socket = FWebSocketsModule::Get().CreateWebSocket(Url, TEXT("ws"));
@@ -212,7 +214,9 @@ void UStarInputComponent::OnWSMessage(const FString& Message)
 	{
 		return;
 	}
-	Event.Generation = FCString::Strtoui64(*GenString, nullptr, 10);
+	// Strtoui64 returns uint64; the cast is explicit so the narrowing to the
+	// reflected int64 member is deliberate rather than an implicit conversion.
+	Event.Generation = (int64)FCString::Strtoui64(*GenString, nullptr, 10);
 	HandleStreamEvent(Event);
 }
 
