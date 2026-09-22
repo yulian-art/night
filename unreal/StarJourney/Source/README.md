@@ -91,6 +91,45 @@ Director 通过 `bAutoInitialize` 自己发现 Pawn 与 Station 并接线，**�
 
 > 仓库里 `Source/` 是源码；编译产物 `Binaries/`、`Intermediate/` 已被 `.gitignore` 排除。第一次编译前需先把 `unreal/StarJourney` 同步到本机工作工程（见上层 `Manage-StarJourney.ps1`），或直接把 `Source/` 拷进工作工程根目录再生成工程文件。
 
+### 编译失败排查（据实际日志）
+
+**症状：UBT 约 1 秒即失败，报 `RulesError`，且根本没编到我们的代码**
+
+```
+Unable to instantiate module 'SwarmInterface': Could not find NetFxSDK install dir;
+this will prevent SwarmInterface from installing.
+Result: Failed (RulesError)
+Total execution time: 1.00 seconds
+```
+
+**原因**：`SwarmInterface` 属于 **Editor target 的开发者工具**，它需要 **.NET Framework SDK 4.6+**。机器上只有 .NET 10（Core），两者不是一回事。
+
+**两种解法**：
+
+1. **想立刻验证 C++ 是否编得过 → 编 Game target**（推荐，无需装任何东西）：
+
+   ```cmd
+   "%ENGINE_PATH%\Engine\Build\BatchFiles\Build.bat" StarJourney Win64 Development ^
+     "%PROJECT_FILE%" -WaitMutex
+   ```
+
+   Game target **不构建开发者工具**，因此整条 `Launch → UnrealEd → PropertyEditor → …` 依赖链被绕开（上面的错误追溯里正是这条链）。StarJourney 模块是 `Runtime` 类型，Game target 一样会编译它，足以确认代码本身能否通过。
+
+2. **要能打开编辑器 → 装 .NET Framework 4.8.1 Developer Pack**，然后照常编 `StarJourneyEditor`：
+
+   ```cmd
+   "%ENGINE_PATH%\Engine\Build\BatchFiles\Build.bat" StarJourneyEditor Win64 Development ^
+     "%PROJECT_FILE%" -WaitMutex
+   ```
+
+   验证安装：`dir "C:\Program Files (x86)\Windows Kits\NETFXSDK\"` 应出现 `4.8` / `4.8.1`。
+
+**另外两条容易踩的坑**：
+
+- **`WebSockets` 插件不能从 `.uproject` 里删掉**。`StarJourney.Build.cs` 依赖 `WebSockets` 模块，`StarInputComponent.cpp` 也用了 `FWebSocketsModule`；插件被禁用而 Build.cs 仍依赖它，UBT 会直接报找不到模块。`Manage-StarJourney.ps1` 每次同步都会用仓库版本覆盖 `.uproject`，所以**重跑一次同步即可自动修回**。
+- **`.uproject` 必须是 UTF-8**。用 PowerShell 的 `Set-Content` / `Out-File` 直接改它（PS 5.1 默认写 UTF-16LE+BOM）会导致工程无法解析。改这个文件请用编辑器或 `Copy-Item`。
+- 若报 `TObjectPtr is not a member of UE`，**不要**把 `TObjectPtr<>` 换成裸指针——`TObjectPtr` 在 UE5 完全合法，那只会掩盖真正的原因（通常是包含顺序或头文件缺失）。
+
 ## 键盘操作（默认）
 
 | 键 | 动作 | 游戏作用 |
