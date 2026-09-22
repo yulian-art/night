@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Inspect', 'Build', 'PlayLevel', 'Capture', 'Validate', 'Open', 'Play')]
+    [ValidateSet('Inspect', 'Build', 'PlayLevel', 'ImportArt', 'Capture', 'Validate', 'Open', 'Play')]
     [string]$Action = 'Build',
     [string]$ProjectRoot = 'D:\UE\Projects\StarJourney',
     [string]$EngineRoot = 'D:\UE\UE_5.8',
@@ -42,13 +42,28 @@ if ($Action -eq 'Play') {
     Write-Output "Playing $ProjectFile"
     exit 0
 }
+if ($Action -eq 'ImportArt') {
+    # The Blender export lives in the source repository, outside the work project,
+    # and the shared copy step above only mirrors Config and Content. Stage art/
+    # into the project so import_art.py finds <ProjectRoot>\art\export without
+    # needing STAR_ART_EXPORT. Contents are merged, never deleted, so a manual
+    # drop into the project's art\export survives.
+    $ArtSource = Join-Path $PSScriptRoot '..\art'
+    if (Test-Path $ArtSource) {
+        $ArtTarget = Join-Path $ProjectRoot 'art'
+        New-Item $ArtTarget -ItemType Directory -Force | Out-Null
+        Copy-Item (Join-Path $ArtSource '*') $ArtTarget -Recurse -Force
+    } else {
+        Write-Warning "No art source at $ArtSource; import_art.py will use an existing project copy or STAR_ART_EXPORT."
+    }
+}
 $RunStarted = Get-Date
 if ($Action -in @('Capture', 'Validate')) {
     $ScriptName = if ($Action -eq 'Capture') { 'capture_scene.py' } else { 'validate_play.py' }
     $Script = Join-Path $ProjectRoot "Content\Python\$ScriptName"
     $Process = Start-Process $Editor -Wait -PassThru -ArgumentList @('"' + $ProjectFile + '"', '-unattended', '-NoSplash', '-NoSound', '-RenderOffscreen', '-windowed', '-ResX=1600', '-ResY=900', '"-ExecutePythonScript=' + $Script + '"', '"-abslog=' + $Logs + '\' + $Action + '.log"')
 } else {
-    $ScriptName = if ($Action -eq 'Inspect') { 'inspect_assets.py' } elseif ($Action -eq 'PlayLevel') { 'build_play_level.py' } else { 'build_scene.py' }
+    $ScriptName = if ($Action -eq 'Inspect') { 'inspect_assets.py' } elseif ($Action -eq 'PlayLevel') { 'build_play_level.py' } elseif ($Action -eq 'ImportArt') { 'import_art.py' } else { 'build_scene.py' }
     $Script = Join-Path $ProjectRoot "Content\Python\$ScriptName"
     if ($Action -eq 'Build' -and (Test-Path (Join-Path $ProjectRoot 'Content\StarJourney'))) {
         $Backup = Join-Path $ProjectRoot ('Saved\SceneBackups\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
@@ -81,6 +96,21 @@ if ($Action -eq 'PlayLevel') {
     # the gameplay mode and spawn one over the demo. Both are hard failures.
     if (!$Report.play_gamemode_set) { throw "UE PlayLevel could not set the playable map's game mode. See $ReportPath" }
     if (!$Report.cinematic_gamemode_set) { throw "UE PlayLevel could not pin the cinematic map to GameModeBase; the demo would inherit the gameplay mode. See $ReportPath" }
+    if ($Report.warnings -and @($Report.warnings).Count -gt 0) { Write-Warning (@($Report.warnings) -join '; ') }
+}
+if ($Action -eq 'ImportArt') {
+    $ReportPath = Join-Path $ProjectRoot 'Saved\SceneReports\import_art_report.json'
+    if (!(Test-Path $ReportPath) -or (Get-Item $ReportPath).LastWriteTime -lt $RunStarted) {
+        throw "UE ImportArt did not write a fresh report: $ReportPath"
+    }
+    $Report = Get-Content $ReportPath -Raw | ConvertFrom-Json
+    # The unit assertion is the whole point of the import: a 100x scale mistake is
+    # invisible everywhere else and silently poisons every later measurement, so a
+    # failed assertion is a hard failure here.
+    if (!$Report.scale_assertion_passed) {
+        $Failed = @($Report.assets | Where-Object { !$_.height_ok } | ForEach-Object { $_.mesh })
+        throw "UE ImportArt scale assertion failed for: $($Failed -join ', '). Check the Blender export scale. See $ReportPath"
+    }
     if ($Report.warnings -and @($Report.warnings).Count -gt 0) { Write-Warning (@($Report.warnings) -join '; ') }
 }
 Write-Output "UE $Action completed: $ProjectFile"

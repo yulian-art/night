@@ -2,8 +2,11 @@
 #include "StarRunnerPawn.h"
 
 #include "Camera/CameraComponent.h"
+#include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/InputComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "StarInputComponent.h"
 
 AStarRunnerPawn::AStarRunnerPawn()
@@ -17,6 +20,15 @@ AStarRunnerPawn::AStarRunnerPawn()
 
 	VisualRoot = CreateDefaultSubobject<USceneComponent>(TEXT("VisualRoot"));
 	VisualRoot->SetupAttachment(Capsule);
+
+	// The full-body character. It is a sibling of VisualRoot on the capsule, so
+	// both presentation paths hang off the same body and the placeholder parts
+	// keep working when no skeletal mesh is assigned. Collision is off: the
+	// capsule owns it (see the header), which is also what keeps the director's
+	// clamped station stops honest regardless of what the animation does.
+	Mesh = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("Mesh"));
+	Mesh->SetupAttachment(Capsule);
+	Mesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	Input = CreateDefaultSubobject<UStarInputComponent>(TEXT("Input"));
 
@@ -54,6 +66,25 @@ void AStarRunnerPawn::BeginPlay()
 	// authored rear view instead of looking out from the capsule origin.
 	Camera->SetFieldOfView(CameraFov);
 	UpdateCamera();
+
+	// Bind the animation blueprint here rather than in the constructor: the
+	// constructor runs on the CDO, before any per-instance asset assignment, so
+	// doing it there would bake in whatever the class default happened to be.
+	//
+	// Root motion stays a content-side contract: the AnimBP must keep it off.
+	// This pawn integrates its own forward travel in Tick, and the director
+	// clamps station stops to an exact world X, so a montage that also
+	// translated the body would add a second, invisible movement on top of both.
+	// It is not forced here because the anim instance is created lazily, so a
+	// write at this point could silently land on nothing.
+	if (Mesh && AnimClass)
+	{
+		Mesh->SetAnimInstanceClass(AnimClass);
+	}
+	// Push the initial body offset once so frame 0 matches the collision body
+	// even before Tick runs (the mesh may already carry a jump/squat offset on
+	// a respawn or a hot reload).
+	ApplyVisualOffset();
 }
 
 void AStarRunnerPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -188,6 +219,11 @@ void AStarRunnerPawn::BeginAction(EStarAction Action)
 	// UE leaves Ready itself once it accepts a Begin.
 	Tracking = EStarTracking::NotReady;
 
+	// Animation first: the doc wants a Begin to give immediate feedback (the
+	// leg lifts, the jump leaves the ground), so the montage starts in the same
+	// frame the action is accepted rather than on the next Tick.
+	PlayActionMontage(Action);
+
 	switch (Action)
 	{
 	case EStarAction::JumpLeft:
@@ -222,6 +258,11 @@ void AStarRunnerPawn::CompleteAction()
 	{
 		SquatTarget = 0.0f;
 	}
+	// End of the cycle releases the montage. Actions that hold a pose (the jack
+	// before its close, a raised leg) hold because the asset is authored that
+	// way; the doc's Start/Hold/End staging makes this Complete the thing that
+	// closes them. Squat has no montage: it blends out through SquatAlpha.
+	StopActionMontage(Finished);
 	ActiveAction = EStarAction::None;
 	// Count/advance on completed cycles only (never Begin or Cancel).
 	OnActionCompleted.Broadcast(Finished);
@@ -230,6 +271,7 @@ void AStarRunnerPawn::CompleteAction()
 void AStarRunnerPawn::CancelAction()
 {
 	// Cancel voids the cycle; do not treat it as a completed stand-up.
+	const EStarAction Cancelled = ActiveAction;
 	if (ActiveAction == EStarAction::Squat)
 	{
 		SquatTarget = 0.0f;
@@ -238,6 +280,9 @@ void AStarRunnerPawn::CancelAction()
 	{
 		bJumping = false;
 	}
+	// A cancelled cycle must not leave its montage playing, or a lost tracking
+	// signal would freeze the body mid-action for the rest of the run.
+	StopActionMontage(Cancelled);
 	ActiveAction = EStarAction::None;
 }
 
@@ -334,4 +379,96 @@ void AStarRunnerPawn::ApplyVisualOffset()
 	// performs the action. Lane change moves the pawn body directly.
 	const float Z = CurrentOffsetZ - SquatAlpha * SquatDrop;
 	VisualRoot->SetRelativeLocation(FVector(0.0f, 0.0f, Z));
+
+	// The skeletal body takes the jump arc but NOT the squat drop. The arc is
+	// game-driven travel no animation can know about, so it has to come from
+	// here; the crouch is instead a pose the AnimBP blends from
+	// GetSquatAlpha(). Applying SquatDrop as well would sink the character by
+	// the placeholder amount on top of its own crouch -- through the road.
+	if (Mesh)
+	{
+		Mesh->SetRelativeLocation(FVector(0.0f, 0.0f, CurrentOffsetZ));
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Animation contract. The AnimBP drives its graph from GetAnimState() and
+// GetSquatAlpha(); C++ only starts and stops montages. Nothing here assumes an
+// asset exists, so a project with no art yet still runs the full game.
+// ---------------------------------------------------------------------------
+
+EStarAnimState AStarRunnerPawn::GetAnimState() const
+{
+	// Squat wins while the blend is off-centre, not merely while the cycle is
+	// active: that covers the release too, so the body eases back to running
+	// instead of snapping upright the moment the stand-up is confirmed.
+	if (ActiveAction == EStarAction::Squat || SquatAlpha > KINDA_SMALL_NUMBER)
+	{
+		return EStarAnimState::Squat;
+	}
+
+	switch (ActiveAction)
+	{
+	case EStarAction::JumpingJack: return EStarAnimState::Jack;
+	case EStarAction::JumpLeft:    return EStarAnimState::LaneLeft;
+	case EStarAction::JumpRight:   return EStarAnimState::LaneRight;
+	case EStarAction::LeftLeg:     return EStarAnimState::LegLeft;
+	case EStarAction::RightLeg:    return EStarAnimState::LegRight;
+	default: break;
+	}
+
+	// The lateral interpolation can still be running after a cycle closed (or
+	// before one opened), and the body should read as moving sideways then, not
+	// as running down the middle of the road.
+	if (bLaneChanging)
+	{
+		return Lane == EStarLane::Left ? EStarAnimState::LaneLeft : EStarAnimState::LaneRight;
+	}
+
+	return bRunning ? EStarAnimState::Run : EStarAnimState::Idle;
+}
+
+UAnimMontage* AStarRunnerPawn::MontageForAction(EStarAction Action) const
+{
+	switch (Action)
+	{
+	case EStarAction::JumpingJack: return JackMontage;
+	case EStarAction::JumpLeft:    return LaneLeftMontage;
+	case EStarAction::JumpRight:   return LaneRightMontage;
+	case EStarAction::LeftLeg:     return LegLeftMontage;
+	case EStarAction::RightLeg:    return LegRightMontage;
+	// Squat and None have none: the crouch is a blended pose, not a one-shot.
+	default: return nullptr;
+	}
+}
+
+void AStarRunnerPawn::PlayActionMontage(EStarAction Action)
+{
+	UAnimMontage* Montage = MontageForAction(Action);
+	if (!Mesh || !Montage)
+	{
+		// Art not assigned yet: skip quietly. The placeholder body and the
+		// offset layer still convey the action, so the game stays playable.
+		return;
+	}
+	if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
+	{
+		AnimInstance->Montage_Play(Montage);
+	}
+}
+
+void AStarRunnerPawn::StopActionMontage(EStarAction Action)
+{
+	UAnimMontage* Montage = MontageForAction(Action);
+	if (!Mesh || !Montage)
+	{
+		return;
+	}
+	if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
+	{
+		// Blend out rather than cut, so the close of a jack or the landing of a
+		// jump does not pop straight back to the locomotion pose.
+		constexpr float BlendOutSeconds = 0.15f;
+		AnimInstance->Montage_Stop(BlendOutSeconds, Montage);
+	}
 }

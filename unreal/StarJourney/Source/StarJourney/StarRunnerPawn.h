@@ -3,12 +3,16 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
+#include "StarAnimTypes.h"
 #include "StarTypes.h"
 #include "StarRunnerPawn.generated.h"
 
 class UCameraComponent;
 class UCapsuleComponent;
 class USceneComponent;
+class USkeletalMeshComponent;
+class UAnimInstance;
+class UAnimMontage;
 class UStarInputComponent;
 
 // Broadcast when an action cycle completes (never on Begin/Cancel). The
@@ -80,6 +84,21 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Star|Runner")
 	UCameraComponent* GetRunnerCamera() const { return Camera; }
 
+	// ---- Animation contract (read by the character AnimBP) ------------------
+
+	// Which pose the body should hold right now. The AnimBP reads this instead
+	// of re-deriving gameplay state, so the graph and the gameplay code can
+	// never disagree about what the runner is doing.
+	UFUNCTION(BlueprintPure, Category = "Star|Anim")
+	EStarAnimState GetAnimState() const;
+
+	// Squat blend: 0 = standing, 1 = fully crouched. Exposed because the squat
+	// pose is owned by the AnimBP (there is deliberately no squat montage), so
+	// the graph needs this both to blend in and to blend back out when the
+	// player really stands up.
+	UFUNCTION(BlueprintPure, Category = "Star|Anim")
+	float GetSquatAlpha() const { return SquatAlpha; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -138,6 +157,33 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Camera")
 	float CameraFov = 55.0f;
 
+	// ---- Animation assets (assigned in the editor, never hard-coded) --------
+	// C++ holds no asset paths on purpose: the skeleton, the blueprint and the
+	// montages live in the project's content and must stay swappable without a
+	// code change or a recompile.
+
+	// Animation blueprint for the skeletal mesh. Left unset, the placeholder
+	// body on VisualRoot is simply what the player sees, and nothing breaks.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Star|Anim")
+	TSubclassOf<UAnimInstance> AnimClass;
+
+	// One-shot montage per action. A null entry is skipped silently so the game
+	// stays playable while the art is still being produced.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Star|Anim")
+	TObjectPtr<UAnimMontage> JackMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Star|Anim")
+	TObjectPtr<UAnimMontage> LaneLeftMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Star|Anim")
+	TObjectPtr<UAnimMontage> LaneRightMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Star|Anim")
+	TObjectPtr<UAnimMontage> LegLeftMontage;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Star|Anim")
+	TObjectPtr<UAnimMontage> LegRightMontage;
+
 	// ---- Components ----------------------------------------------------------
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star|Components")
@@ -156,6 +202,13 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star|Components")
 	TObjectPtr<UCameraComponent> Camera;
 
+	// Full-body skeletal mesh (SK_Hero / SK_Fox). Presentation only: the capsule
+	// stays the collision authority, so no animation can push the runner off the
+	// route or through a station trigger, and no root motion can desync the
+	// director's clamped stopping logic.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star|Components")
+	TObjectPtr<USkeletalMeshComponent> Mesh;
+
 private:
 	// Per-frame movement integration.
 	void UpdateForward(float Dt);
@@ -173,6 +226,17 @@ private:
 	void CancelAction();
 
 	void StartLaneChange(EStarLane Target);
+
+	// ---- Montage plumbing ---------------------------------------------------
+
+	// Montage that represents one action, or null when the action has none
+	// (squat) or the asset has not been assigned yet.
+	UAnimMontage* MontageForAction(EStarAction Action) const;
+
+	// Start the montage for a new cycle, and finish the one a cycle is leaving.
+	// Both are no-ops when there is no mesh, no anim instance or no montage.
+	void PlayActionMontage(EStarAction Action);
+	void StopActionMontage(EStarAction Action);
 
 	bool bRunning = true;
 	EStarTracking Tracking = EStarTracking::NotReady;
