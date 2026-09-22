@@ -22,9 +22,9 @@
 
 | 文件 | 网格 | 骨骼 | 片段数 | 关键片段 | 体积 |
 |---|---|---|---|---|---|
-| `astronaut_Quaternius_OgeSH89Nmx.glb` | 2 | **43** | 18 | `Idle` `Run` `Walk` **`Duck`** `Jump` `Jump_Idle` `Jump_Land` `Wave` `Yes` `No` | 0.72 MB |
-| `astronaut_Quaternius_zbtPq4dOJL.glb` | 2 | 43 | 18 | 与上行**结构完全相同**（同款换色） | 0.67 MB |
-| `astronaut_Quaternius_3hC2i0CTuO.glb` | 4 | 248 | 24 | `Run` **`Run_Left`** **`Run_Right`** `Run_Back` `Roll` **`Kick_Left`** **`Kick_Right`** | 1.86 MB |
+| `astronaut_space_suit.glb`（原 `3hC2i0CTuO`） | 4 | **62** | 24 | `SpaceSuit_Feet/Legs/Body/Head`；`Idle` `Run` **`Run_Left`** **`Run_Right`** `Walk` `Roll` **`Kick_Left`** **`Kick_Right`** | 1.86 MB |
+| ~~`astronaut_Quaternius_OgeSH89Nmx.glb`~~ | 2 | 43 | 18 | **实际是 `BarbaraTheBee`（蜜蜂）**，非宇航员 → 已删除 | — |
+| ~~`astronaut_Quaternius_zbtPq4dOJL.glb`~~ | 2 | 43 | 18 | **实际是 `FernandoTheFlamingo`（火烈鸟）** → 已删除 | — |
 | `quaternius_fox_cc0.glb` | 1 | 51 | 24（**12 段重复前缀**，实为 12 段） | `Idle` `Idle_2` `Walk` **`Gallop`** `Gallop_Jump` | 0.94 MB |
 | `astronaut_Polygonal-Mind_*.glb` ×3 | 1 | 0 | 0 | 静态，包围盒仅 **1–5 cm**（小摆件） | 1.7 MB |
 | ~~`astronaut_PW-Wu_*`~~ / ~~`astronaut_Poly-by-Google_*`~~ | 静态、无骨骼 | 0 | **CC-BY（有署名义务）→ 已删除** | — |
@@ -37,18 +37,21 @@
 
 | 角色 | 采用 | 理由 |
 |---|---|---|
-| **主角宇航员** | `astronaut_Quaternius_OgeSH89Nmx`（43 骨，含 `Duck`/`Jump`） | 骨骼数合理（248 骨那套偏重）；`Duck` 可直接当蹲下，`Jump` 系列可支撑跳跃 |
-| （备选/换色） | `zbtPq4dOJL` | 与上行同结构，**M1 时在 Blender 里各渲一张对比后再定**，另一份删掉 |
-| **拾光狐狸** | `quaternius_fox_cc0`（51 骨，`Idle`/`Gallop`） | 现成的待机与奔跑 |
+| **主角宇航员** | `astronaut_space_suit.glb`（原 `3hC2i0CTuO`，**62 骨**，`SpaceSuit_*`） | **唯一真正的宇航员**（已渲染确认）；且自带 `Run_Left`/`Run_Right`/`Kick_Left`/`Kick_Right`，正好覆盖换道与抬腿 |
+| **拾光狐狸** | `fox_quaternius.glb`（51 骨，`Idle`/`Gallop`） | 现成的待机与奔跑 |
 | **云鲸** | 仍需自制 | 没有匹配的 CC0 巨兽；按设计文档 §5「低模 + 尾巴/鳍少量骨骼」 |
 | 自制宇航员/狐狸 | 转为**可选的重定向目标** | 见 §2.2 |
+
+> ⚠️ **选型纠错记录**：这三个「宇航员」文件里，**只有一个是真宇航员**。另两个的文件名被标成宇航员，实际网格是 `BarbaraTheBee`（蜜蜂）与 `FernandoTheFlamingo`（火烈鸟）。本方案 v2 初稿曾把蜜蜂那份当主角，原因是**只看片段名（它有 `Duck`/`Jump`）而没看网格名**。已按渲染结果纠正：主角改用 `SpaceSuit_*` 那份，两份动物已删除。
+>
+> **教训**：资产的文件名不等于内容；采用前必须**解析实际网格名并渲染确认**。`art/thirdparty/LICENSE.md` 记录了复核脚本。
 
 **许可**：Quaternius 全部为 **CC0**（免署名、可商用）。即便如此仍在 `art/thirdparty/LICENSE.md` 记录来源链接与获取日期——CC0 不要求署名，但**来源可追溯**是工程要求。
 
 ### 2.1 代价：必须说清的两点
 
 1. **美术方向改变**。这套是**低模写实向的科幻角色**（材质名 `SciFi_Main`、`SciFi_MainDark`、`Grey`；片段含 `Gun_Shoot`/`Punch`/`Death`/`Sword_Slash`），与设计文档「圆润低卡通、暖色小小旅人」以及「狐狸与相机上的玩偶同一形象」**不一致**。这是采用现成资产的既定代价。
-2. **七动作里的核心动作仍然缺**（见 §4）。**采用 CC0 并不能免掉 Blender 工作**，只是把「从零做 13 段」降为「补 3 类短片段」。
+2. **七动作里的两个仍然缺**（见 §4）。**采用 CC0 并不能免掉 Blender 工作**，只是把「从零做 13 段」降为「补 2 类短片段」——该资产有 `Run_Left/Right` 与 `Kick_Left/Right`，但**没有蹲下（Duck），也没有任何开合跳**。
 
 ### 2.2 保留的改进余地：重定向
 
@@ -79,19 +82,20 @@
 |---|---|---|
 | 跑步 | `Run` | ✅ 直接可用 |
 | 站立 / 待机 | `Idle` | ✅ |
-| 蹲下 | `Duck` | ✅ 语义吻合 |
-| 往左跳 / 往右跳 | `Run_Left` / `Run_Right`（在 248 骨那套里） | ⚠️ **跨骨架**（62 vs 43 骨），需重定向或补做 |
-| 抬左腿 / 抬右腿 | `Kick_Left` / `Kick_Right`（同上） | ⚠️ 踢 ≠ 跨步，且跨骨架 |
-| **开合跳** | **无** | ❌ **必须补做** |
+| 往左跳 / 往右跳 | `Run_Left` / `Run_Right` | ✅ **同一骨架，直接用** |
+| 抬左腿 / 抬右腿 | `Kick_Left` / `Kick_Right` | ⚠️ 踢 ≠ 跨步；先直接用，观感不行再补做 |
+| 蹲下 | **无**（该资产无 `Duck`） | ❌ **必须补做** |
+| **开合跳** | **无**（任何 CC0 资产都没有） | ❌ **必须补做** |
 | 狐狸待机 / 跑 | `Idle` / `Gallop` | ✅ |
 
-**结论：必须补做 3 类短片段**（都在已采用的 43 骨骨架上做，工作量远小于从零）：
+**结论：必须补做 2 类片段**（都在宇航员自己的 **62 骨**骨架上做）：
 
-1. **开合跳**：`A_Hero_Jack_Start`（8 帧）/ `_Hold`（6 帧循环）/ `_End`（8 帧）——对应 `phase` 的 Begin→Complete，Begin 打开、Complete 收回，**只有打开阶段计分**（设计文档硬要求）。
-2. **抬腿**：`A_Hero_LegLift_Left_Up/_Down`、`_Right_Up/_Down`（各 6 帧）——跨步而非踢。
-3. **换道跳**：`A_Hero_Lane_Left` / `_Right`（各 11 帧）——侧向蹬地 + 落地，**在自家骨架上做**，避免跨骨架重定向。
+1. **蹲下**：`A_Hero_Duck_In`（5 帧）/ `_Loop`（20 帧循环）/ `_Out`（5 帧）——该资产**没有 `Duck`**，而蹲下是七动作之一，且设计要求「保持到真实站起」。
+2. **开合跳**：`A_Hero_Jack_Start`（8 帧）/ `_Hold`（6 帧循环）/ `_End`（8 帧）——对应 `phase` 的 Begin→Complete：Begin 打开、Complete 收回，**只有打开阶段计分**（设计文档硬要求）。**没有任何 CC0 资产含这个动作**。
 
-补做方式：在 Blender 里导入已采用的骨架，用**姿态关键帧**（旋转 + 少量位移）逐段做。这些动作都是简单的四肢旋转，不需要写实表演。
+换道跳与抬腿**优先直接用自带片段**（`Run_Left`/`Run_Right`、`Kick_Left`/`Kick_Right`）。抬腿若观感上「踢」得不像跨步，再补做 `A_Hero_LegLift_*`。由于全在同一个 62 骨骨架上，**不存在跨骨架重定向问题**。
+
+补做方式：在 Blender 里导入该骨架，用**姿态关键帧**（旋转 + 少量位移）逐段做——都是简单四肢旋转，不需要写实表演。
 
 ---
 
@@ -246,10 +250,11 @@ UPROPERTY(EditDefaultsOnly, Category="Star|Anim") TObjectPtr<UAnimMontage> LegRi
 
 ---
 
-## 11. 下一步（建议立刻做 M1）
+## 11. 下一步（M1）
 
-1. 在 Blender 里渲染 `OgeSH89Nmx` 与 `zbtPq4dOJL` 对比，定下制服款式，删掉另一份；
-2. 归一化两个角色（原点/朝向/缩放/命名）+ 自检 + 导出 FBX；
-3. 写 `import_art.py` + PS1 `ImportArt` 动作；
-4. 你在 Windows 跑一次导入，把结果发我；
-5. 通过后做 M2 的 3 类补做片段与 Pawn 接入。
+选型已定（§2 的纠错记录）：宇航员 = `astronaut_space_suit.glb`（62 骨 `SpaceSuit_*`），狐狸 = `fox_quaternius.glb`。
+
+1. 归一化两个角色（原点在脚 / 朝向 -Y / 缩放到 180 cm 与 55 cm / 排除文件里那个不可见的 `Icosphere`）+ 自检 + 导出 FBX（`global_scale=100`）；
+2. 写 `import_art.py` + PS1 `ImportArt` 动作，导入后断言高度；
+3. 你在 Windows 跑一次导入，把结果（成功或报错）发我；
+4. 通过后做 M2：补做 §4 的两类片段（蹲下、开合跳）+ Pawn 骨骼网格接入。
