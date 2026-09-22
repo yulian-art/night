@@ -1,0 +1,87 @@
+syntax = "proto3";
+package star.v1;
+option go_package = "night/gen/star/v1;starv1";
+
+// UE owns generation: increment before opening each new stream and clear local
+// input immediately. Never replay events; stream failure means pause/re-ready.
+service StarService {
+  rpc WatchInput(WatchInputRequest) returns (stream InputEvent);
+  // Only completed, real gameplay runs may call SaveRun. AutoDemo stays local.
+  rpc SaveRun(SaveRunRequest) returns (SaveRunResponse);
+  rpc GetProgress(GetProgressRequest) returns (GetProgressResponse);
+}
+
+// Local adapter for the existing MediaPipe runtime; does not open the camera.
+// Exactly one producer. Receive resets concurrently with sending observations.
+service RecognizerService {
+  rpc Connect(stream InputEvent) returns (stream ResetInput);
+}
+
+enum Action {
+  ACTION_UNSPECIFIED = 0;
+  ACTION_SQUAT = 1;
+  ACTION_LEFT_LEG = 2;
+  ACTION_RIGHT_LEG = 3;
+  ACTION_JUMP_LEFT = 4;
+  ACTION_JUMP_RIGHT = 5;
+  ACTION_JUMPING_JACK = 6;
+}
+enum Phase {
+  PHASE_UNSPECIFIED = 0;
+  PHASE_BEGIN = 1;
+  PHASE_COMPLETE = 2;
+  PHASE_CANCEL = 3;
+}
+enum TrackingState {
+  TRACKING_STATE_UNSPECIFIED = 0;
+  TRACKING_STATE_LOST = 1;
+  TRACKING_STATE_NOT_READY = 2;
+  TRACKING_STATE_READY = 3;
+}
+message ActionEvent {
+  uint64 generation = 1;
+  Action action = 2;
+  Phase phase = 3;
+}
+message TrackingEvent {
+  uint64 generation = 1;
+  TrackingState state = 2;
+}
+message InputEvent {
+  oneof event {
+    ActionEvent action = 1;
+    TrackingEvent tracking = 2;
+  }
+}
+message WatchInputRequest { uint64 generation = 1; }
+// 0 means no UE consumer: discard pending frames and suspend action output.
+// Bind nonzero generation at frame capture, NEVER when inference completes.
+// Old inference callbacks must not mutate the new recognizer state machine.
+message ResetInput { uint64 generation = 1; }
+
+// Stable IDs for the three levels; display names stay in UE.
+enum Level {
+  LEVEL_UNSPECIFIED = 0;
+  LEVEL_WIND_POST = 1;
+  LEVEL_ECHO_FOREST = 2;
+  LEVEL_CLOUD_WHALE = 3;
+}
+message Run {
+  string run_id = 1;
+  Level level_id = 2;
+  int64 score = 3;
+  int64 active_ms = 4;
+  // Keys are numeric Action values 1..6; counts represent completed cycles.
+  map<int32, int64> action_counts = 5;
+}
+message SaveRunRequest { Run run = 1; }
+// A repeated run_id returns the original stored Run, even if payload changed.
+message SaveRunResponse { Run run = 1; }
+message GetProgressRequest {}
+message LevelProgress {
+  Level level_id = 1;
+  bool completed = 2;
+  int64 best_score = 3;
+  bool unlocked = 4;
+}
+message GetProgressResponse { repeated LevelProgress levels = 1; }

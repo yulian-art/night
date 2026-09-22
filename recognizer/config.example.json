@@ -1,0 +1,24 @@
+{
+  "camera": {
+    "device": 0,
+    "backend": "windows-ffmpeg",
+    "width": 1280,
+    "height": 720,
+    "fps": 30,
+    "projection": "perspective",
+    "output_width": 960,
+    "output_height": 720,
+    "yaw_deg": 0,
+    "pitch_deg": 0,
+    "horizontal_fov_deg": 90,
+    "mirror_preview": true,
+    "windows_ffmpeg": "tools/windows-ffmpeg/ffmpeg.exe",
+    "windows_device": "Insta360 X5"
+  },
+  "model": "models/pose_landmarker_lite.task",
+  "address": "127.0.0.1:50051",
+  "max_frame_age_ms": 500,
+  "lost_after_ms": 750,
+  "inference_timeout_ms": 5000,
+  "gestures": {}
+}

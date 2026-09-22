@@ -1,0 +1,6 @@
+# Runtime versions; install in the existing dedicated venv or a project venv.
+mediapipe==0.10.32
+opencv-contrib-python==4.13.0.92
+numpy==2.3.5
+grpcio==1.76.0
+protobuf==6.33.0

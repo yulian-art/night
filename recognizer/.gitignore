@@ -1,0 +1,10 @@
+.venv/
+.venv-test/
+__pycache__/
+*.py[cod]
+*.egg-info/
+models/*.task
+models/*.json
+models/*.part
+config.local.json
+tools/
