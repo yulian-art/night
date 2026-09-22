@@ -72,13 +72,16 @@ GAP_MAX_TRIS = 2500
 CLOUD_NOISE_SCALE = 0.62
 CLOUD_NOISE_STRENGTH = 0.13
 
-#: 第 3 关色板（深蓝紫 + 星光白 + 极光青），颜色逐字冻结
+#: 第 3 关色板 —— 严格取自参考图（白大理石 + 暖金 + 青碧玻璃 + 星光白）。
+#: 参考图里云是**脚下的云海**，不是构件材质；构件本身是古典白石建筑配金饰。
 MATERIALS = {
-    "M_OBS_Cloud":       dict(base=(0.34, 0.40, 0.66, 1.0), rough=0.90, emit=None, power=0.0),
-    "M_OBS_CloudGlow":   dict(base=(0.62, 0.78, 0.98, 1.0), rough=0.75, emit=(0.62, 0.78, 0.98), power=1.2),
-    "M_OBS_Crystal":     dict(base=(0.42, 0.80, 0.90, 1.0), rough=0.15, emit=(0.35, 0.85, 0.95), power=2.5),
-    "M_OBS_CrystalCore": dict(base=(0.92, 0.97, 1.00, 1.0), rough=0.10, emit=(0.85, 0.95, 1.00), power=6.0),
-    "M_OBS_Starlight":   dict(base=(1.00, 0.93, 0.72, 1.0), rough=0.30, emit=(1.00, 0.93, 0.72), power=3.0),
+    "M_OBS_Marble":    dict(base=(0.93, 0.92, 0.89, 1.0), rough=0.35, emit=None, power=0.0),
+    "M_OBS_MarbleWarm":dict(base=(0.86, 0.82, 0.76, 1.0), rough=0.55, emit=None, power=0.0),
+    "M_OBS_Gold":      dict(base=(0.83, 0.68, 0.34, 1.0), rough=0.25, emit=None, power=0.0, metal=0.90),
+    "M_OBS_Aqua":      dict(base=(0.55, 0.85, 0.85, 1.0), rough=0.12, emit=(0.45, 0.85, 0.88), power=1.2),
+    "M_OBS_StarWhite": dict(base=(1.00, 0.98, 0.93, 1.0), rough=0.20, emit=(1.00, 0.96, 0.85), power=3.0),
+    "M_OBS_Banner":    dict(base=(0.22, 0.28, 0.52, 1.0), rough=0.70, emit=None, power=0.0),
+    "M_OBS_CloudSea":  dict(base=(0.88, 0.90, 0.96, 1.0), rough=0.90, emit=None, power=0.0),
 }
 
 
@@ -119,7 +122,7 @@ def material(name):
     bsdf = mat.node_tree.nodes["Principled BSDF"]
     bsdf.inputs["Base Color"].default_value = spec["base"]
     bsdf.inputs["Roughness"].default_value = spec["rough"]
-    bsdf.inputs["Metallic"].default_value = 0.0
+    bsdf.inputs["Metallic"].default_value = spec.get("metal", 0.0)
     if spec["emit"]:
         bsdf.inputs["Emission Color"].default_value = (*spec["emit"], 1.0)
         bsdf.inputs["Emission Strength"].default_value = spec["power"]
@@ -346,50 +349,102 @@ def preview(name, objs, out):
 def build_cloud_arch(report):
     reset_scene()
     parts = []
-    beam_bottom = ARCH_CLEARANCE
-    beam_top = ARCH_TOTAL_HEIGHT - 0.36      # 顶部留给云团
 
-    # 两根立柱：立在路的两侧（|Y| = 3.0），不侵入走廊
+    # ---- 古典白石拱门（对照参考图：柱础 + 柱身 + 柱头 + 金色线脚 + 三角旗）----
+    # 关键取舍：**开口下沿在整条走廊上恒为 1.66**（玩法尺寸不许被造型动到），
+    # 拱券只做在过梁**上方**作为装饰冠，因此净空精确且不受弧线影响。
+    lintel_h = 0.30
+    lintel_top = ARCH_CLEARANCE + lintel_h          # 1.96
+    crown_t = 0.34
+    # 冠顶中心线过 (±3.0, lintel_top+crown_t/2) 与 (0, ARCH_TOTAL_HEIGHT-crown_t/2)
+    zc, R = -15.05, 17.44
+
+    # 柱础（大理石）+ 柱身 + 金色柱头，立在三条车道之外（|Y| = 3.0）
     for side, y in (("L", ARCH_SPAN_Y), ("R", -ARCH_SPAN_Y)):
-        pillar = cylinder(f"pillar_{side}", ARCH_PILLAR_R, beam_bottom,
-                          (0.0, y, beam_bottom / 2.0), verts=16)
-        cloud_noise(pillar, strength=0.035)
-        smooth(pillar)
-        assign(pillar, "M_OBS_Cloud")
-        parts.append(pillar)
+        plinth = cube(f"plinth_{side}", 0.78, 0.78, 0.14, loc=(0.0, y, 0.07))
+        activate(plinth)
+        bpy.ops.object.transform_apply(scale=True)
+        flat(plinth)
+        assign(plinth, "M_OBS_MarbleWarm")
+        parts.append(plinth)
 
-    # 横梁：沿 Y 跨路（长 2×3.0 + 两侧余量），薄薄的沿 X
-    beam = cube("beam", ARCH_DEPTH_X * 2, ARCH_SPAN_Y * 2 + ARCH_PILLAR_R * 2,
-                beam_top - beam_bottom,
-                loc=(0.0, 0.0, (beam_bottom + beam_top) / 2.0))
-    activate(beam)
+        shaft = cube(f"shaft_{side}", 0.46, 0.46, ARCH_CLEARANCE - 0.14,
+                     loc=(0.0, y, 0.14 + (ARCH_CLEARANCE - 0.14) / 2.0))
+        activate(shaft)
+        bpy.ops.object.transform_apply(scale=True)
+        flat(shaft)
+        assign(shaft, "M_OBS_Marble")
+        parts.append(shaft)
+
+        cap = cube(f"capital_{side}", 0.62, 0.62, 0.12, loc=(0.0, y, ARCH_CLEARANCE - 0.06))
+        activate(cap)
+        bpy.ops.object.transform_apply(scale=True)
+        flat(cap)
+        assign(cap, "M_OBS_Gold")
+        parts.append(cap)
+
+    # 过梁：下沿正好 1.66，横跨整条路
+    lintel = cube("lintel", ARCH_DEPTH_X * 2, ARCH_SPAN_Y * 2 + 0.62, lintel_h,
+                  loc=(0.0, 0.0, ARCH_CLEARANCE + lintel_h / 2.0))
+    activate(lintel)
     bpy.ops.object.transform_apply(scale=True)
-    subdivide(beam, 3)
-    cloud_noise(beam)
-    smooth(beam)
-    assign(beam, "M_OBS_Cloud")
-    parts.append(beam)
+    subdivide(lintel, 2)
+    flat(lintel)
+    assign(lintel, "M_OBS_Marble")
+    parts.append(lintel)
 
-    # 横梁上的云团：顶面凑到总高 2.56，底面不得低于净空
-    puffs = []
-    for i in range(7):
-        y = -ARCH_SPAN_Y + i * (2 * ARCH_SPAN_Y / 6)
-        r = 0.34 if i % 2 == 0 else 0.28
-        z = ARCH_TOTAL_HEIGHT - r - 0.03
-        p = ico(f"puff_{i}", r, (0.0, y, z), subdiv=2)
-        cloud_noise(p, strength=0.03, scale=0.45)
-        smooth(p)
-        assign(p, "M_OBS_Cloud")
-        puffs.append(p)
-    parts += puffs
-
-    # 拱门内缘的一道自发光，强调「从下面钻过去」
-    glow = cube("glow", ARCH_DEPTH_X * 0.7, ARCH_SPAN_Y * 1.92, 0.05,
-                loc=(0.0, 0.0, beam_bottom + 0.03))
-    activate(glow)
+    # 过梁顶面的金色线脚
+    fillet = cube("fillet", ARCH_DEPTH_X * 2 + 0.06, ARCH_SPAN_Y * 2 + 0.68, 0.05,
+                  loc=(0.0, 0.0, lintel_top + 0.025))
+    activate(fillet)
     bpy.ops.object.transform_apply(scale=True)
-    assign(glow, "M_OBS_CloudGlow")
-    parts.append(glow)
+    flat(fillet)
+    assign(fillet, "M_OBS_Gold")
+    parts.append(fillet)
+
+    # 装饰拱冠：沿圆弧排布的石块（在过梁之上，不影响净空）
+    N = 11
+    seg_len = (2 * ARCH_SPAN_Y / N) * 1.08
+    for i in range(N):
+        y0 = -ARCH_SPAN_Y + (i + 0.5) * (2 * ARCH_SPAN_Y / N)
+        z0 = zc + math.sqrt(R * R - y0 * y0)
+        slope = -y0 / math.sqrt(R * R - y0 * y0)
+        seg = cube(f"crown_{i}", ARCH_DEPTH_X * 2, seg_len, crown_t,
+                   loc=(0.0, y0, z0))
+        activate(seg)
+        bpy.ops.object.transform_apply(scale=True)
+        seg.rotation_euler = (math.atan(slope), 0.0, 0.0)
+        flat(seg)
+        # 单数块用暖色石，读出砌块感
+        assign(seg, "M_OBS_Marble" if i % 2 == 0 else "M_OBS_MarbleWarm")
+        parts.append(seg)
+
+    # 冠顶两端各一颗星白宝顶
+    for side, y in (("L", ARCH_SPAN_Y * 0.62), ("R", -ARCH_SPAN_Y * 0.62)):
+        z0 = zc + math.sqrt(R * R - y * y)
+        fin = ico(f"finial_{side}", 0.10, (0.0, y, z0 + crown_t / 2 + 0.07), subdiv=1)
+        smooth(fin)
+        assign(fin, "M_OBS_StarWhite")
+        parts.append(fin)
+
+    # 三角旗：挂在柱内侧，**必须落在走廊之外**（|Y| >= 2.70），否则会吃掉净空
+    for side, y in (("L", ARCH_SPAN_Y - 0.15), ("R", -(ARCH_SPAN_Y - 0.15))):
+        flag = cube(f"banner_{side}", 0.04, 0.30, 0.62,
+                    loc=(ARCH_DEPTH_X + 0.03, y, ARCH_CLEARANCE - 0.34))
+        activate(flag)
+        bpy.ops.object.transform_apply(scale=True)
+        flat(flag)
+        assign(flag, "M_OBS_Banner")
+        parts.append(flag)
+
+        star = cube(f"emblem_{side}", 0.03, 0.11, 0.11,
+                    loc=(ARCH_DEPTH_X + 0.06, y, ARCH_CLEARANCE - 0.26),
+                    rot=(0.0, math.radians(45.0), 0.0))
+        activate(star)
+        bpy.ops.object.transform_apply(scale=True)
+        flat(star)
+        assign(star, "M_OBS_Gold")
+        parts.append(star)
 
     arch = join(parts, "OBS_CloudArch_Low")
 
@@ -434,34 +489,34 @@ def build_star_fragment(report):
     # 否则 ±1 m 偏移会被烘进顶点，几何相同的性质就没了）
     base = cylinder("base", 0.50, 0.14, (0.0, 0.0, 0.07), verts=10)
     flat(base)
-    assign(base, "M_OBS_Cloud")
+    assign(base, "M_OBS_Marble")
     parts.append(base)
 
     # 主晶体：下段粗台 + 上段收口（整体精确到 2.16，亮尖再补到 2.50）
     lower_h = 0.95
     lower = cone("main_lower", 0.42, 0.34, lower_h, (0.0, 0.0, 0.14 + lower_h / 2), verts=12)
     flat(lower)
-    assign(lower, "M_OBS_Crystal")
+    assign(lower, "M_OBS_Aqua")
     parts.append(lower)
 
     upper_h = body_top - (0.14 + lower_h)
     upper = cone("main_upper", 0.34, 0.13, upper_h, (0.0, 0.0, 0.14 + lower_h + upper_h / 2), verts=12)
     flat(upper)
-    assign(upper, "M_OBS_Crystal")
+    assign(upper, "M_OBS_Aqua")
     parts.append(upper)
 
     # 发光亮尖
     tip = cone("main_tip", 0.13, 0.0, 0.34, (0.0, 0.0, body_top + 0.17), verts=12)
     flat(tip)
-    assign(tip, "M_OBS_CrystalCore")
+    assign(tip, "M_OBS_StarWhite")
     parts.append(tip)
 
     # 3 个细节小晶体：横向距离必须小于该高度处主晶体的半径，否则会脱在半空
     # （主晶体在 Z=0.5~0.8 处半径约 0.36~0.39）
     for i, (dx, dy, dz, r, h, tilt_x, tilt_y, mat) in enumerate([
-        (0.30, -0.20, 0.30, 0.13, 0.62, 12.0, -18.0, "M_OBS_Crystal"),
-        (-0.26, 0.22, 0.20, 0.10, 0.48, -15.0, 20.0, "M_OBS_Crystal"),
-        (0.05, 0.30, 0.50, 0.075, 0.36, 22.0, 8.0, "M_OBS_CrystalCore"),
+        (0.30, -0.20, 0.30, 0.13, 0.62, 12.0, -18.0, "M_OBS_Aqua"),
+        (-0.26, 0.22, 0.20, 0.10, 0.48, -15.0, 20.0, "M_OBS_Aqua"),
+        (0.05, 0.30, 0.50, 0.075, 0.36, 22.0, 8.0, "M_OBS_StarWhite"),
     ]):
         c = cone(f"detail_{i}", r, 0.0, h,
                  (dx, dy, 0.14 + dz + h / 2),
@@ -475,7 +530,7 @@ def build_star_fragment(report):
     for i, (dx, dy, dz) in enumerate([(0.46, 0.10, 1.55), (-0.40, -0.30, 1.95)]):
         s = ico(f"spark_{i}", 0.055, (dx, dy, dz), subdiv=1)
         smooth(s)
-        assign(s, "M_OBS_Starlight")
+        assign(s, "M_OBS_StarWhite")
         parts.append(s)
 
     merged = join(parts, "OBS_StarFragment")
@@ -551,10 +606,10 @@ def build_cloud_gap(report):
         activate(blk)
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         subdivide(blk, 3)
-        cloud_noise(blk)
+        cloud_noise(blk, strength=0.025)
         clamp_inner(blk, sgn)
         smooth(blk)
-        assign(blk, "M_OBS_Cloud")
+        assign(blk, "M_OBS_Marble")
         blocks.append(blk)
 
     # 缺口两侧内壁的受光面：贴在块的内壁上，不侵入缺口
@@ -565,7 +620,7 @@ def build_cloud_gap(report):
         activate(lip)
         bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
         clamp_inner(lip, sgn)
-        assign(lip, "M_OBS_CloudGlow")
+        assign(lip, "M_OBS_Gold")
         blocks.append(lip)
 
     # 两朵浮在缺口上方的碎云（不封住缺口，仅作点缀）
@@ -573,7 +628,7 @@ def build_cloud_gap(report):
         w = ico(f"wisp_{i}", r, (x, y, z), subdiv=2)
         cloud_noise(w, strength=0.06, scale=0.4)
         smooth(w)
-        assign(w, "M_OBS_Cloud")
+        assign(w, "M_OBS_CloudSea")
         blocks.append(w)
 
     gap = join(blocks, "OBS_CloudGap")
