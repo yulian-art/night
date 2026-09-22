@@ -93,6 +93,9 @@ func run() error {
 	defer wsListener.Close()
 	mux := http.NewServeMux()
 	mux.Handle("/ws/input", service.NewWSGateway(hub))
+	// Save chain over HTTP+JSON, for the same reason as the WebSocket gateway:
+	// UE has no gRPC plugin. Both transports share one storage.Store.
+	service.NewHTTPAPI(store).Register(mux)
 	httpServer := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 
 	signals := make(chan os.Signal, 1)

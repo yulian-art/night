@@ -16,6 +16,8 @@ public class StarJourney : ModuleRules
 			"EnhancedInput",
 			// WebSocket gateway client (Go 127.0.0.1:50052). Engine built-in.
 			"WebSockets",
+			// Save chain over HTTP+JSON to the same Go service. Engine built-in.
+			"Http",
 			"Json",
 			"JsonUtilities",
 		});

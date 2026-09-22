@@ -2,11 +2,14 @@
 #include "StarLevelDirector.h"
 
 #include "StarRunnerPawn.h"
+#include "StarSaveQueueComponent.h"
 #include "StarStation.h"
+#include "Engine/World.h"
 
 AStarLevelDirector::AStarLevelDirector()
 {
 	PrimaryActorTick.bCanEverTick = true;
+	SaveQueue = CreateDefaultSubobject<UStarSaveQueueComponent>(TEXT("SaveQueue"));
 }
 
 void AStarLevelDirector::BeginPlay()
@@ -26,6 +29,8 @@ void AStarLevelDirector::InitializeRun(AStarRunnerPawn* InRunner, const TArray<A
 	bWaitingAtStation = false;
 	bLevelComplete = false;
 	ActionCounts.Empty();
+	// Start the active-time clock for Run.active_ms.
+	RunStartedAtSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 	if (Runner)
 	{
 		Runner->OnActionCompleted.RemoveAll(this);
@@ -139,5 +144,47 @@ void AStarLevelDirector::Settle()
 	{
 		Runner->SetRunning(false);
 	}
+	// Persist the result before presenting the finale: the outbox enqueues
+	// durably first, so even a crash during the celebration cannot lose it.
+	SaveSettledRun();
 	OnLevelSettled(Starlight);
+}
+
+void AStarLevelDirector::SaveSettledRun()
+{
+	if (!SaveQueue)
+	{
+		return;
+	}
+
+	FStarRun Run;
+	// One id per settled run, generated once here and reused by every retry:
+	// if the service commits but the reply is lost, the retry returns the
+	// original record instead of writing a second one.
+	Run.RunId = FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphens);
+	Run.LevelId = LevelId;
+	Run.Score = Starlight;
+
+	const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : RunStartedAtSeconds;
+	Run.ActiveMs = (int64)FMath::Max(0.0, (Now - RunStartedAtSeconds) * 1000.0);
+
+	for (const TPair<EStarAction, int32>& Pair : ActionCounts)
+	{
+		// Keys are the numeric Action values 1..6; EStarAction mirrors the proto
+		// so no lookup table is needed.
+		if (Pair.Value > 0)
+		{
+			Run.ActionCounts.Add((int32)Pair.Key, (int64)Pair.Value);
+		}
+	}
+
+	if (SaveQueue->Enqueue(Run))
+	{
+		SaveQueue->Flush();
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("StarJourney: could not enqueue the settled run; the result was not saved"));
+	}
 }

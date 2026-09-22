@@ -8,6 +8,7 @@
 
 class AStarRunnerPawn;
 class AStarStation;
+class UStarSaveQueueComponent;
 
 // Owns the run for one level: the runner advances automatically, clamps to a
 // stop at each task station, waits for the required action cycle, lights the
@@ -66,6 +67,10 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	// Stable level id (1 风邮原野 / 2 回声森林 / 3 云鲸星海), sent as Run.level_id.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Director")
+	int32 LevelId = 2;
+
 	// Finish-line world X; crossing it (with all stations done) settles.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Director")
 	float FinishX = 10400.0f;
@@ -74,9 +79,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Director")
 	float StopApproachDistance = 240.0f;
 
+	// Durable outbox for settled runs. Owned here because settling is the only
+	// place a real run is produced (AutoDemo must never enqueue).
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star|Components")
+	TObjectPtr<UStarSaveQueueComponent> SaveQueue;
+
 private:
 	void UpdateStops();
 	void Settle();
+
+	// Build the completed-run record and hand it to the outbox, then try to
+	// send. Runs exactly once per settled level.
+	void SaveSettledRun();
 
 	UPROPERTY()
 	TObjectPtr<AStarRunnerPawn> Runner;
@@ -90,6 +104,9 @@ private:
 	int32 CompletedCount = 0;
 	int32 Starlight = 0;
 	bool bLevelComplete = false;
+
+	// Run start time on the game clock, for Run.active_ms.
+	double RunStartedAtSeconds = 0.0;
 
 	// Completed action-cycle counts, keyed by action (for SaveRun).
 	TMap<EStarAction, int32> ActionCounts;
