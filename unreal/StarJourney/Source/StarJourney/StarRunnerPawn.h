@@ -1,0 +1,164 @@
+// Copyright 向星而行. Three-lane runner driven by action events.
+#pragma once
+
+#include "CoreMinimal.h"
+#include "GameFramework/Pawn.h"
+#include "StarTypes.h"
+#include "StarRunnerPawn.generated.h"
+
+class UCapsuleComponent;
+class USceneComponent;
+class UStarInputComponent;
+
+// Broadcast when an action cycle completes (never on Begin/Cancel). The
+// LevelDirector listens to advance task stations and count cycles.
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FStarOnActionCompleted, EStarAction, Action);
+
+// The player character: an automatically-forward-moving runner on three
+// lanes. It does not read keyboard/gRPC directly; it consumes EStarAction
+// cycles through UStarInputComponent, which unifies keyboard and the
+// WebSocket gesture feed behind one interface.
+//
+// Real-time rule (anti-latency): every action mutates movement state in the
+// same Tick it is received. There is no queue, no polling timer, no
+// Sequencer. Begin lands on the frame it arrives.
+UCLASS()
+class STARJOURNEY_API AStarRunnerPawn : public APawn
+{
+	GENERATED_BODY()
+
+public:
+	AStarRunnerPawn();
+
+	virtual void Tick(float DeltaSeconds) override;
+	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
+
+	// ---- External control (LevelDirector) ---------------------------------
+
+	// Pause/resume forward motion at a station or on tracking loss.
+	UFUNCTION(BlueprintCallable, Category = "Star|Runner")
+	void SetRunning(bool bNewRunning);
+
+	UFUNCTION(BlueprintPure, Category = "Star|Runner")
+	bool IsRunning() const { return bRunning; }
+
+	// ---- Action entry point (called by the input component) ----------------
+
+	// Feed one action cycle. Returns true if the action was accepted this
+	// frame. UE applies the four documented input checks before acting.
+	UFUNCTION(BlueprintCallable, Category = "Star|Runner")
+	bool HandleAction(EStarAction Action, EStarPhase Phase);
+
+	// Feed a tracking-state change (Lost/NotReady/Ready).
+	UFUNCTION(BlueprintCallable, Category = "Star|Runner")
+	void HandleTracking(EStarTracking State);
+
+	// ---- State for HUD / Director ------------------------------------------
+
+	UFUNCTION(BlueprintPure, Category = "Star|Runner")
+	EStarLane GetLane() const { return Lane; }
+
+	UFUNCTION(BlueprintPure, Category = "Star|Runner")
+	bool IsActionActive() const { return ActiveAction != EStarAction::None; }
+
+	UFUNCTION(BlueprintPure, Category = "Star|Runner")
+	EStarAction GetActiveAction() const { return ActiveAction; }
+
+	UFUNCTION(BlueprintPure, Category = "Star|Runner")
+	EStarTracking GetTracking() const { return Tracking; }
+
+	UFUNCTION(BlueprintPure, Category = "Star|Runner")
+	bool IsReady() const { return Tracking == EStarTracking::Ready; }
+
+	// LevelDirector subscribes here to count completed cycles and advance stops.
+	UPROPERTY(BlueprintAssignable, Category = "Star|Runner")
+	FStarOnActionCompleted OnActionCompleted;
+
+protected:
+	virtual void BeginPlay() override;
+
+	// ---- Movement tuning (editable per-instance / in Blueprint) -------------
+
+	// Constant forward speed in cm/s while running.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Movement")
+	float ForwardSpeed = 700.0f;
+
+	// Lane lateral spacing in cm (three lanes at Y = -LaneSpacing, 0, +LaneSpacing).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Movement")
+	float LaneSpacing = 180.0f;
+
+	// Lane-change duration in seconds (documented 0.3-0.45s window).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Movement")
+	float LaneChangeDuration = 0.38f;
+
+	// Jump arc height in cm for a jumping jack.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Movement")
+	float JumpHeight = 90.0f;
+
+	// Jump (rising+landing) duration in seconds.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Movement")
+	float JumpDuration = 0.7f;
+
+	// How far the capsule/body drops while squatting, in cm.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Movement")
+	float SquatDrop = 32.0f;
+
+	// Blend time in/out of the squat pose.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Star|Movement")
+	float SquatBlendTime = 0.15f;
+
+	// ---- Components ----------------------------------------------------------
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star|Components")
+	TObjectPtr<UCapsuleComponent> Capsule;
+
+	// Visual root; the assembled astronaut meshes attach under this so motion
+	// offsets (lane/jump/squat) never fight the capsule's world location.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star|Components")
+	TObjectPtr<USceneComponent> VisualRoot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star|Components")
+	TObjectPtr<UStarInputComponent> Input;
+
+private:
+	// Per-frame movement integration.
+	void UpdateForward(float Dt);
+	void UpdateLane(float Dt);
+	void UpdateJump(float Dt);
+	void UpdateSquat(float Dt);
+	void ApplyVisualOffset();
+
+	bool CanStartAction(EStarAction Action) const;
+	void BeginAction(EStarAction Action);
+	void CompleteAction();
+	void CancelAction();
+
+	void StartLaneChange(EStarLane Target);
+
+	bool bRunning = true;
+	EStarTracking Tracking = EStarTracking::NotReady;
+
+	// Center-line Y captured at spawn; lanes sit at CenterLineY + (lane-1)*spacing.
+	float CenterLineY = 0.0f;
+
+	EStarLane Lane = EStarLane::Center;
+	// Lane-change interpolation state (moves the pawn body, not just the visual).
+	float LaneStartY = 0.0f;
+	float LaneTargetY = 0.0f;
+	float LaneChangeElapsed = 0.0f;
+	bool bLaneChanging = false;
+
+	// Active action cycle.
+	EStarAction ActiveAction = EStarAction::None;
+
+	// Jump-arc state (jumping jack).
+	float JumpElapsed = 0.0f;
+	bool bJumping = false;
+
+	// Squat blend state (0 = standing, 1 = fully squatted).
+	float SquatAlpha = 0.0f;
+	float SquatTarget = 0.0f;
+
+	// Vertical visual offset from the jump arc, applied to VisualRoot.
+	float CurrentOffsetZ = 0.0f;
+};
