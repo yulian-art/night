@@ -99,6 +99,20 @@ void AStarRunnerPawn::SetupPlayerInputComponent(UInputComponent* PlayerInputComp
 void AStarRunnerPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	// Switch root motion off the first time an anim instance exists. Doing this
+	// here rather than in BeginPlay is deliberate: the instance is created
+	// lazily when the mesh registers, so BeginPlay would normally see null and
+	// silently leave root motion enabled.
+	if (!bRootMotionDisabled && Mesh)
+	{
+		if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
+		{
+			AnimInstance->SetRootMotionMode(ERootMotionMode::IgnoreRootMotion);
+			bRootMotionDisabled = true;
+		}
+	}
+
 	UpdateForward(DeltaSeconds);
 	UpdateLane(DeltaSeconds);
 	UpdateJump(DeltaSeconds);

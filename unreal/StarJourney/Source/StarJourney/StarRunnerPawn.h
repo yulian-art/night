@@ -241,6 +241,12 @@ private:
 	bool bRunning = true;
 	EStarTracking Tracking = EStarTracking::NotReady;
 
+	// Root motion is forced off from code (see Tick) once the anim instance
+	// exists, rather than trusting the AnimBP's own setting: it would otherwise
+	// stack on top of the Tick-driven forward motion and the Director's world-X
+	// clamp, pushing the runner past a task stop that must not be skippable.
+	bool bRootMotionDisabled = false;
+
 	// Center-line Y captured at spawn; lanes sit at CenterLineY + (lane-1)*spacing.
 	float CenterLineY = 0.0f;
 
