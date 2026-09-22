@@ -1,3 +1,12 @@
 /bin/
 /.tools/
 /data/
+
+# UE generated data and licensed VaultCache assets stay local.
+/unreal/**/Binaries/
+/unreal/**/DerivedDataCache/
+/unreal/**/Intermediate/
+/unreal/**/Saved/
+/unreal/**/Content/LP_sci_fi_island/
+/unreal/**/Content/StarJourney/
+/unreal/**/__pycache__/

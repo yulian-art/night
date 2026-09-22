@@ -41,4 +41,6 @@ make generate
 
 完整接口约定与 UE/识别运行时接线顺序见 [Go 与 Protobuf 接入说明](docs/Go与Protobuf接入说明.md)。
 
-人体识别入口见 [recognizer 使用说明](recognizer/README.md)：Windows FFmpeg 采集 Insta360 X5 USB 画面，通过本机管道送入 WSL Python，由 MediaPipe 和动作状态机向 Go 发送识别结果。支持原生预览，无需 Windows Python、Android 或 HTML。仓库尚未包含 UE 工程。
+人体识别入口见 [recognizer 使用说明](recognizer/README.md)：Windows FFmpeg 采集 Insta360 X5 USB 画面，通过本机管道送入 WSL Python，由 MediaPipe 和动作状态机向 Go 发送识别结果。支持原生预览，无需 Windows Python、Android 或 HTML。
+
+UE 场景入口见 [回声森林场景说明](unreal/README.md)：包含 UE 5.8 工程配置、素材导入与场景生成脚本、原生地图和 30 秒自动演示。Windows 工作工程位于 `D:\UE\Projects\StarJourney`。当前为场景与演出样片，尚未接入姿态识别和正式任务逻辑。
