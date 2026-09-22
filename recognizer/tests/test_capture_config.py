@@ -64,6 +64,21 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             CameraConfig(device="recording.mp4")
 
+    def test_invalid_windows_capture_settings_fail_early(self):
+        for field, value in (("windows_device", ""), ("windows_ffmpeg", " "),
+                             ("windows_device", "X5\0"), ("windows_video_codec", "-f dshow")):
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                CameraConfig(**{field: value})
+
+    def test_windows_codec_and_relative_executable_load_from_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps({"camera": {"backend": "windows-ffmpeg",
+                            "windows_ffmpeg": "tools/ffmpeg.exe", "windows_video_codec": "mjpeg"}}))
+            config = load_config(path)
+            self.assertEqual(config.camera.windows_ffmpeg, str(Path(directory) / "tools/ffmpeg.exe"))
+            self.assertEqual(config.camera.windows_video_codec, "mjpeg")
+
     def test_uint64_generation_never_uses_float(self):
         g=2**63+12345
         event=InputEvent(g,action=Action.SQUAT,phase=Phase.BEGIN)

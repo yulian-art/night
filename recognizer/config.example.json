@@ -2,8 +2,8 @@
   "camera": {
     "device": 0,
     "backend": "windows-ffmpeg",
-    "width": 1280,
-    "height": 720,
+    "width": 1920,
+    "height": 1080,
     "fps": 30,
     "projection": "perspective",
     "output_width": 960,
@@ -13,7 +13,8 @@
     "horizontal_fov_deg": 90,
     "mirror_preview": true,
     "windows_ffmpeg": "tools/windows-ffmpeg/ffmpeg.exe",
-    "windows_device": "Insta360 X5"
+    "windows_device": "Insta360 X5",
+    "windows_video_codec": "mjpeg"
   },
   "model": "models/pose_landmarker_lite.task",
   "address": "127.0.0.1:50051",

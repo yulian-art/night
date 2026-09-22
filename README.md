@@ -41,4 +41,4 @@ make generate
 
 完整接口约定与 UE/识别运行时接线顺序见 [Go 与 Protobuf 接入说明](docs/Go与Protobuf接入说明.md)。
 
-当前未包含 UE 工程、相机采集、MediaPipe Pose Landmarker 或真实动作分类器；这些源码尚未提供。服务接收现有识别运行时的动作/状态结果，不能凭人框识别抬腿或跳跃。
+人体识别入口见 [recognizer 使用说明](recognizer/README.md)：Windows FFmpeg 采集 Insta360 X5 USB 画面，通过本机管道送入 WSL Python，由 MediaPipe 和动作状态机向 Go 发送识别结果。支持原生预览，无需 Windows Python、Android 或 HTML。仓库尚未包含 UE 工程。

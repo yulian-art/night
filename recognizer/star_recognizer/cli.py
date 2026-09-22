@@ -3,6 +3,7 @@ import argparse
 from dataclasses import replace
 import importlib.metadata
 import json
+import math
 import os
 from pathlib import Path
 import platform
@@ -19,7 +20,7 @@ def parser():
     sub = p.add_subparsers(dest="command", required=True)
     run = sub.add_parser("run", help="capture and recognize; use --standalone until UE/watch is connected")
     run.add_argument("--config", default=str(ROOT / "config.example.json"))
-    run.add_argument("--camera", help="numeric index or /dev/video path")
+    run.add_argument("--camera", help="Windows device name for windows-ffmpeg; otherwise numeric index or /dev/video path")
     run.add_argument("--video", help="local recording for standalone testing, played at source FPS")
     run.add_argument("--model")
     run.add_argument("--address")
@@ -31,16 +32,30 @@ def parser():
     doc.add_argument("--go", action="store_true", help="also call GetProgress (no save writes)")
     dev = sub.add_parser("devices", help="list capture devices")
     dev.add_argument("--config", default=str(ROOT / "config.example.json"))
+    dev.add_argument("--modes", action="store_true", help="list the configured Windows camera's input modes")
+    probe = sub.add_parser("probe", help="verify Windows camera -> WSL by reading a complete frame; no inference or Go")
+    probe.add_argument("--config", default=str(ROOT / "config.example.json"))
+    probe.add_argument("--timeout", type=float, default=10, help="first-frame timeout in seconds")
     watch = sub.add_parser("watch", help="temporary UE input consumer, no camera and no SaveRun")
     watch.add_argument("--address", default="127.0.0.1:50051")
     watch.add_argument("--seconds", type=float, default=60)
     return p
 
-def devices(config=None):
+def devices(config=None, modes=False):
     if config is not None and config.camera.backend == "windows-ffmpeg":
-        from .windows_capture import list_windows_devices
-        print(list_windows_devices(config.camera))
+        from .windows_capture import list_windows_devices, list_windows_options, windows_device_names
+        listing = list_windows_devices(config.camera)
+        print(listing)
+        if config.camera.windows_device not in windows_device_names(listing):
+            raise RuntimeError(f"Configured Windows video device {config.camera.windows_device!r} is absent; "
+                               "set camera.windows_device to a listed video name or alternative name")
+        if modes:
+            print(list_windows_options(config.camera))
+        else:
+            print("Device found; video capture is not verified. Use 'probe' to check an actual frame.")
         return 0
+    if modes:
+        raise ValueError("devices --modes requires camera.backend=windows-ffmpeg")
     nodes = sorted(Path("/dev").glob("video*"))
     for node in nodes:
         name_file = Path("/sys/class/video4linux") / node.name / "name"
@@ -50,6 +65,25 @@ def devices(config=None):
     if not nodes:
         print("No /dev/video* devices. X5 must be in Webcam mode and attached to WSL via USB/IP.")
     return 0 if nodes else 2
+
+def probe(args):
+    from .windows_capture import WindowsFFmpegCapture
+    config = load_config(args.config)
+    if config.camera.backend != "windows-ffmpeg":
+        raise ValueError("probe requires camera.backend=windows-ffmpeg")
+    if not math.isfinite(args.timeout) or args.timeout <= 0:
+        raise ValueError("--timeout must be a finite positive number")
+    capture = WindowsFFmpegCapture(config.camera, lambda: (0, 0))
+    try:
+        capture.start(timeout=args.timeout)
+        frame = capture.frames.take(0)
+        if frame is None:
+            raise RuntimeError("Windows camera did not deliver a complete frame")
+        print(json.dumps({"capture": "ok", **capture.actual,
+                          "frame_shape": list(frame.image.shape)}, ensure_ascii=False))
+    finally:
+        capture.close()
+    return 0
 
 def doctor(args):
     config = load_config(args.config)
@@ -108,15 +142,18 @@ def run(args):
     from .controller import Controller
     from .pose import PoseEngine
     config = load_config(args.config)
-    if args.seconds < 0:
-        raise ValueError("--seconds must be nonnegative")
+    if not math.isfinite(args.seconds) or args.seconds < 0:
+        raise ValueError("--seconds must be finite and nonnegative")
     if args.video and not args.standalone:
         raise ValueError("--video requires --standalone so recorded actions cannot enter a real game")
     if args.video and not Path(args.video).is_file():
         raise FileNotFoundError(args.video)
     if args.camera:
-        device = int(args.camera) if args.camera.isdecimal() else args.camera
-        config = replace(config, camera=replace(config.camera, device=device))
+        if config.camera.backend == "windows-ffmpeg":
+            config = replace(config, camera=replace(config.camera, windows_device=args.camera))
+        else:
+            device = int(args.camera) if args.camera.isdecimal() else args.camera
+            config = replace(config, camera=replace(config.camera, device=device))
     if args.model:
         config = replace(config, model=str(Path(args.model).resolve()))
     if args.address:
@@ -147,7 +184,7 @@ def run(args):
         else:
             capture = CameraCapture(config.camera, controller.capture_token, args.video)
         capture.start()
-        print("Capture negotiated: " + json.dumps(capture.actual), file=sys.stderr, flush=True)
+        print("Capture ready: " + json.dumps(capture.actual), file=sys.stderr, flush=True)
         if not args.standalone:
             print("Waiting for UE or 'watch' to open a generation. No UE means no action output.", file=sys.stderr)
         while not stop.is_set():
@@ -164,6 +201,8 @@ def run(args):
             if capture.error:
                 controller.watchdog(clock_ms() + config.lost_after_ms)
                 raise RuntimeError(capture.error)
+            if getattr(capture, "last_frame_at", 0) and clock_ms() - capture.last_frame_at > config.inference_timeout_ms:
+                raise RuntimeError("Windows camera stopped delivering frames; check USB connection and restart capture")
             if not args.headless:
                 from .preview import show
                 preview = engine.preview()
@@ -211,7 +250,8 @@ def run(args):
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
-        return {"run": run, "doctor": doctor, "devices": lambda a: devices(load_config(a.config)), "watch": watch}[args.command](args)
+        return {"run": run, "doctor": doctor, "devices": lambda a: devices(load_config(a.config), a.modes),
+                "probe": probe, "watch": watch}[args.command](args)
     except KeyboardInterrupt:
         return 0
     except (ValueError, TypeError, OSError, RuntimeError, ImportError) as exc:

@@ -23,6 +23,8 @@ cd /home/julien/night/recognizer
 bash scripts/setup.sh
 .venv/bin/python scripts/fetch_windows_ffmpeg.py
 .venv/bin/python -m star_recognizer devices
+.venv/bin/python -m star_recognizer devices --modes
+.venv/bin/python -m star_recognizer probe
 .venv/bin/python -m star_recognizer doctor
 ```
 
@@ -36,17 +38,24 @@ bash scripts/setup.sh
 4. 若需要自定义参数：`cp config.example.json config.local.json`。所有命令加 `--config config.local.json`。
 5. `camera.windows_ffmpeg` 是从 WSL 可访问的 exe 路径，例如 `/mnt/c/tools/ffmpeg/bin/ffmpeg.exe`；默认使用本项目下载的便携版。
 
-枚举某设备支持的分辨率/帧率（FFmpeg 枚举结束返回非零属正常行为）：
+查询配置中设备支持的分辨率、帧率和编码，再验证 Windows → WSL 是否收到完整一帧：
 
 ```bash
-tools/windows-ffmpeg/ffmpeg.exe -hide_banner -list_options true -f dshow -i 'video=Insta360 X5'
+.venv/bin/python -m star_recognizer devices --modes
+.venv/bin/python -m star_recognizer probe --timeout 10
 ```
 
-默认申请 1280×720 / 30 FPS 普通视图，必须以设备实际支持的模式为准。如果选择 **2880×1440 全景输出**，将配置中的 width/height 改为相应值，并设置 `projection: "equirectangular"`；调整 yaw_deg、pitch_deg 和 horizontal_fov_deg，使玩家居中、头和双脚可见。全景需是已拼接的 2:1 经纬图，双鱼眼或上下双镜头画面不能直接使用。普通单镜头设 `projection: "perspective"`。
+默认申请 **1920×1080 / 30 FPS / MJPEG** 普通视图（`windows_video_codec: "mjpeg"`）。这台 X5 实测仅枚举出 1920×1080 和 2880×1440 两种 30 FPS MJPEG 模式；旧配置中的 1280×720 不受支持，会导致设备可枚举却无法打开。已有 `config.local.json` 的用户也需要更新 width/height 和 windows_video_codec；其他设备以 `devices --modes` 的结果为准。编码设为空字符串时使用驱动默认值。
+
+width/height/fps 是**相机输入模式**，不要为降低推理分辨率随意修改它们。普通视图会先由 Windows FFmpeg 等比例缩小至 output_width/output_height 的边界内，默认通过管道传输 960×540 BGR 帧；Python 的预览和 MediaPipe 使用同一尺寸，不拉伸关节。`probe` 不加载模型、不连接 Go、不保存画面，只验证完整帧到达 WSL 后退出。`doctor` 检查依赖和设备枚举，不代替实际取帧。
+
+如果选择 **2880×1440 全景输出**，将 width/height 改为相应值，保留 MJPEG，并设置 `projection: "equirectangular"`；全景帧完整传入 WSL，由 Python 投影为普通视图。调整 yaw_deg、pitch_deg 和 horizontal_fov_deg，使玩家居中、头和双脚可见。全景需是已拼接的 2:1 经纬图，双鱼眼或上下双镜头画面不能直接使用。普通单镜头设 `projection: "perspective"`。
 
 预览镜像仅改变显示，动作左右始终按玩家身体定义。相机固定，玩家正面朝向相机，保持足够空间；每次开局/恢复先在中央自然站稳。
 
 若 WSL 无法执行 exe，检查 Windows interop 是否可用，例如 `/mnt/c/Windows/System32/cmd.exe /c ver`。若要改用已映射的 Linux 摄像头，将 backend 改为 v4l2，device 改为 `/dev/video0`；当前桥接方案不要求 USB/IP。
+
+若出现 `WSL ... socket failed`，说明 Windows 程序尚未成功运行，应检查 interop 或当前执行环境权限。若出现 `Could not set video options`，核对支持的输入模式；若正确模式仍报 `Could not find video device` 或 I/O 错误，检查 Webcam 模式、USB 连接以及相机是否被其他 Windows 程序占用。程序会保留 FFmpeg 错误详情；10 秒内没有首帧会退出，运行中连续 5 秒无帧也会退出并断开动作传输。
 
 ## 先独立验证人体识别
 
@@ -102,6 +111,6 @@ cd /home/julien/night/recognizer
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-测试区分合成骨骼状态机测试、真实 gRPC 传输测试及真实 MediaPipe 空白图推理。空白图推理只证明模型能运行及回调正确，不代替真人动作验收。相机实际模式、长期延迟、多人遮挡和六种动作阈值必须在目标设备验证。
+测试覆盖分片管道读取、真实子进程二进制传输及退出、首帧超时、FFmpeg 诊断、最新帧覆盖、generation/reset epoch 隔离及真实 MediaPipe 空白图推理。空白图推理只证明模型能运行及回调正确，不代替真人动作验收。相机实际模式、长期延迟、多人遮挡和六种动作阈值必须在目标设备验证。
 
 参考：[MediaPipe Pose](https://developers.google.com/edge/mediapipe/solutions/vision/pose_landmarker/python)、[X5 Webcam](https://onlinemanual.insta360.com/x5/en-us/camera/appuse/obs)、[FFmpeg DirectShow](https://ffmpeg.org/ffmpeg-devices.html#dshow)。

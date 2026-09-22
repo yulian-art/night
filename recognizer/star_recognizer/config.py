@@ -20,6 +20,7 @@ class CameraConfig:
     mirror_preview: bool = True
     windows_ffmpeg: str = "ffmpeg.exe"
     windows_device: str = "Insta360 X5"
+    windows_video_codec: str = ""
 
     def __post_init__(self):
         if self.backend not in {"auto", "v4l2", "dshow", "msmf", "windows-ffmpeg"}:
@@ -40,6 +41,14 @@ class CameraConfig:
             raise ValueError("camera.device must be a nonnegative index or /dev/video path")
         if isinstance(self.device, str) and not self.device.startswith("/dev/video"):
             raise ValueError("use --video for a file; camera.device strings must be /dev/video paths")
+        for name in ("windows_ffmpeg", "windows_device"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip() or "\0" in value:
+                raise ValueError(f"camera.{name} must be a nonempty string without NUL")
+        if not isinstance(self.windows_video_codec, str) or (
+            self.windows_video_codec and not self.windows_video_codec.replace("_", "").isalnum()
+        ):
+            raise ValueError("camera.windows_video_codec must be a codec name such as mjpeg, or empty for driver default")
 
 @dataclass(frozen=True)
 class RuntimeConfig:
