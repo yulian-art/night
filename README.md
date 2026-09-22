@@ -10,7 +10,7 @@
 go mod download
 make test
 make build
-./bin/star-service -listen 127.0.0.1:50051 -db data/star.db
+./bin/star-service -listen 127.0.0.1:50051 -ws-listen 127.0.0.1:50052 -db data/star.db
 ```
 
 在另一终端运行（需没有其他 UE/识别端连接）：
@@ -20,6 +20,27 @@ make build
 ```
 
 输出 `Ready → JumpingJack Begin → Complete → Ready` 和三关进度；不打开相机、不写真实成绩。服务仅允许 loopback IP，提供标准 gRPC Health 服务；Ctrl+C 最多等待 3 秒退出。
+
+## UE 接入：WebSocket/JSON 网关
+
+服务除 gRPC（`127.0.0.1:50051`，Python 识别端用）外，还在 `127.0.0.1:50052` 暴露一个 **WebSocket/JSON 网关**，供 UE 用内置 WebSocket 插件直连，无需在 UE 中集成 gRPC。
+
+```
+GET ws://127.0.0.1:50052/ws/input?generation=<uint64>
+```
+
+- `generation` 由 UE 在连接参数中传入，语义与 gRPC `WatchInput` 完全一致（递增编号；开始输入/进出任务/暂停恢复/点击完成/重连时换号）。
+- 连接后服务端按序推送 JSON 事件，每条对应一个 `InputEvent`：
+
+```json
+{"tracking": {"generation": "1790...", "state": "READY"}}
+{"action":   {"generation": "1790...", "action": "JUMPING_JACK", "phase": "BEGIN"}}
+```
+
+- `generation` 以十进制**字符串**传输（JSON 数字放不下 uint64）。`state` ∈ `LOST/NOT_READY/READY`；`action` ∈ `SQUAT/LEFT_LEG/RIGHT_LEG/JUMP_LEFT/JUMP_RIGHT/JUMPING_JACK`；`phase` ∈ `BEGIN/COMPLETE/CANCEL`。
+- 出错（编号被替换、队列溢出、识别端断线）时服务端先发一条 `{"error": ..., "code": ...}` 再关闭连接，UE 据此暂停并以新 generation 重连。
+
+存档仍走 gRPC（`SaveRun` / `GetProgress`）；完整约定见 [Go 与 Protobuf 接入说明](docs/Go与Protobuf接入说明.md)。
 
 重新生成协议需要 protoc（已验证 3.21.12）及固定版本 Go 插件：
 

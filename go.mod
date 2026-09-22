@@ -7,6 +7,8 @@ require (
 	google.golang.org/protobuf v1.36.12
 )
 
+require github.com/gorilla/websocket v1.5.3
+
 require (
 	github.com/mattn/go-sqlite3 v1.14.22
 	golang.org/x/net v0.58.0 // indirect
