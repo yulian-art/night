@@ -86,3 +86,5 @@ make generate
 UE 场景入口见 [回声森林场景说明](unreal/README.md)：包含 UE 5.8 工程配置、素材导入与场景生成脚本、原生地图和 30 秒自动演示。Windows 工作工程位于 `D:\UE\Projects\StarJourney`。
 
 UE 侧现在分成两层：`L_EchoForest` 是**播片样片**（Sequencer 驱动，原样保留）；`L_EchoForest_Play` 是**可玩关卡**，由 C++ 玩法模块（`unreal/StarJourney/Source`）实时驱动——三道跑酷 Pawn、键盘/WebSocket 双输入源、任务点机关、Slate HUD、Esc 暂停，以及结算写入存档的完整链路。构建、操作与后续批次见 [UE 玩法模块说明](unreal/StarJourney/Source/README.md)。角色骨骼动画与第二、三关内容仍待后续批次。
+
+美术资产从 Blender 到 UE 的完整管线（单位/原点/朝向约定、骨架与动画规格、Montage 契约、导入脚本与验收判据）见 [从 Blender 建模到 UE 运行 · 实现方案](docs/从Blender建模到UE运行实现方案.md)。
