@@ -33,13 +33,13 @@ AStarRunnerPawn* UStarInputComponent::Runner() const
 	return CachedRunner;
 }
 
-uint64 UStarInputComponent::NextGeneration()
+int64 UStarInputComponent::NextGeneration()
 {
 	// Unix-nanos from total ticks (100ns units); strictly increasing for a live
 	// process, matching star-smoke's scheme. FDateTime ticks are 100ns since
 	// 0001-01-01; the Unix epoch offset is 62135596800 seconds.
 	const int64 UnixTicks = FDateTime::UtcNow().GetTicks() - 621355968000000000LL;
-	return (uint64)UnixTicks * 100u;
+	return UnixTicks * 100;
 }
 
 // ---------------------------------------------------------------------------

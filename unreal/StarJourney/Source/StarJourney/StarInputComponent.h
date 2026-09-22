@@ -44,15 +44,16 @@ public:
 	void DisconnectGestures();
 
 	// Current local generation (string form used on the wire).
-	UFUNCTION(BlueprintPure, Category = "Star|Input")
-	uint64 GetGeneration() const { return Generation; }
+	// Not exposed to Blueprint: UnrealHeaderTool rejects uint64 return values,
+	// and FStarInputEvent::Generation mirrors this on the reflected side.
+	int64 GetGeneration() const { return Generation; }
 
 protected:
 	// Owner helpers.
 	AStarRunnerPawn* Runner() const;
 
 	// Bump to a fresh generation (Unix-nanos, matching star-smoke's scheme).
-	uint64 NextGeneration();
+	int64 NextGeneration();
 
 	// Keyboard handlers (UFUNCTION required for BindKey member-pointer overload).
 	UFUNCTION() void OnJumpLeftPressed();
@@ -80,7 +81,7 @@ private:
 	TObjectPtr<AStarRunnerPawn> CachedRunner;
 
 	// Local input state (documented UE-side trio).
-	uint64 Generation = 0;
+	int64 Generation = 0;
 	EStarTracking Tracking = EStarTracking::Ready; // keyboard starts ready
 	EStarAction ActiveAction = EStarAction::None;
 

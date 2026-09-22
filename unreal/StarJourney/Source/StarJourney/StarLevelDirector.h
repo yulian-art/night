@@ -84,8 +84,11 @@ public:
 	void OnLevelSettled(int32 FinalStarlight);
 
 	// Blueprint hook: a station lit; play its 1.4s ceremony.
+	// The count parameter is prefixed so it does not shadow the
+	// AStarLevelDirector::CompletedCount member (MSVC C4458, an error under
+	// UE 5.8's default warning settings).
 	UFUNCTION(BlueprintImplementableEvent, Category = "Star|Director")
-	void OnStationLit(int32 StationIndex, int32 CompletedCount);
+	void OnStationLit(int32 StationIndex, int32 InCompletedCount);
 
 protected:
 	virtual void BeginPlay() override;

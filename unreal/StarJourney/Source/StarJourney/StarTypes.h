@@ -39,15 +39,20 @@ enum class EStarTracking : uint8
 };
 
 // One input event. Either an action event or a tracking event, never both.
-// Mirrors star.v1.InputEvent. Generation is a string because JSON numbers
-// cannot hold a full uint64; parse with FCString::Strtoui64.
+// Mirrors star.v1.InputEvent. Generation arrives as a string over the wire
+// because JSON numbers cannot hold a full uint64; it is parsed with
+// FCString::Strtoui64.
+//
+// int64 rather than uint64: UnrealHeaderTool rejects uint64 in reflected
+// Blueprint properties and functions. A Unix-nanosecond timestamp stays
+// positive in int64 until year 2262, so range is not a practical constraint.
 USTRUCT(BlueprintType)
 struct FStarInputEvent
 {
 	GENERATED_BODY()
 
 	UPROPERTY(BlueprintReadOnly, Category = "Star")
-	uint64 Generation = 0;
+	int64 Generation = 0;
 
 	UPROPERTY(BlueprintReadOnly, Category = "Star")
 	EStarAction Action = EStarAction::None;
